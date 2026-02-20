@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.gcc/
+.env
+.secrets
+*.log

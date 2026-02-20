@@ -1,0 +1,39 @@
+{
+  "name": "claude-gcc",
+  "version": "0.2.0",
+  "description": "Git-style Context Controller for Claude Code — automatic milestone tracking with commit/branch/merge workflow",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thatainomadlife/open-gcc"
+  },
+  "homepage": "https://github.com/thatainomadlife/open-gcc#readme",
+  "bugs": {
+    "url": "https://github.com/thatainomadlife/open-gcc/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "context-management",
+    "session-continuity",
+    "developer-tools",
+    "ai-coding",
+    "claude",
+    "plugin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "vitest": "^3.0.0"
+  }
+}
