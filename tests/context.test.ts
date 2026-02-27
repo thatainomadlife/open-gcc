@@ -6,8 +6,16 @@ import {
   updateMainMilestones,
   readMainContext,
   readRecentCommits,
+  updateRegistryActiveBranch,
+  addBranchToRegistry,
+  updateRegistryBranchStatus,
+  addBranchToMainMd,
+  removeBranchFromMainMd,
+  getBranchHeader,
+  updateBranchConclusion,
+  appendLog,
 } from '../src/context.js';
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -16,7 +24,7 @@ describe('context', () => {
 
   beforeEach(() => {
     contextRoot = join(tmpdir(), `gcc-ctx-${Date.now()}`);
-    mkdirSync(join(contextRoot, 'branches'), { recursive: true });
+    mkdirSync(join(contextRoot, 'branches', 'main'), { recursive: true });
   });
 
   afterEach(() => {
@@ -25,24 +33,24 @@ describe('context', () => {
 
   describe('getNextCommitId', () => {
     it('returns C001 when no commits exist', () => {
-      expect(getNextCommitId(contextRoot)).toBe('C001');
+      expect(getNextCommitId(contextRoot, 'main')).toBe('C001');
     });
 
     it('returns C001 when commits.md is empty', () => {
-      writeFileSync(join(contextRoot, 'commits.md'), '# Milestone Journal\n\n');
-      expect(getNextCommitId(contextRoot)).toBe('C001');
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'), '# Milestone Journal\n\n');
+      expect(getNextCommitId(contextRoot, 'main')).toBe('C001');
     });
 
     it('increments from latest commit', () => {
-      writeFileSync(join(contextRoot, 'commits.md'),
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'),
         '# Milestone Journal\n\n## [C005] 2026-01-01 12:00 | branch:main | Test\n');
-      expect(getNextCommitId(contextRoot)).toBe('C006');
+      expect(getNextCommitId(contextRoot, 'main')).toBe('C006');
     });
 
     it('pads to 3 digits', () => {
-      writeFileSync(join(contextRoot, 'commits.md'),
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'),
         '# Milestone Journal\n\n## [C099] 2026-01-01 12:00 | branch:main | Test\n');
-      expect(getNextCommitId(contextRoot)).toBe('C100');
+      expect(getNextCommitId(contextRoot, 'main')).toBe('C100');
     });
   });
 
@@ -60,23 +68,23 @@ describe('context', () => {
 
   describe('prependCommit', () => {
     it('prepends after header', async () => {
-      writeFileSync(join(contextRoot, 'commits.md'), '# Milestone Journal\n\n');
-      await prependCommit(contextRoot, '## [C001] new entry\n\n');
-      const content = readFileSync(join(contextRoot, 'commits.md'), 'utf-8');
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'), '# Milestone Journal\n\n');
+      await prependCommit(contextRoot, 'main', '## [C001] new entry\n\n');
+      const content = readFileSync(join(contextRoot, 'branches', 'main', 'commits.md'), 'utf-8');
       expect(content).toBe('# Milestone Journal\n\n## [C001] new entry\n\n');
     });
 
     it('prepends before existing commits', async () => {
-      writeFileSync(join(contextRoot, 'commits.md'),
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'),
         '# Milestone Journal\n\n## [C001] old entry\n');
-      await prependCommit(contextRoot, '## [C002] new entry\n\n');
-      const content = readFileSync(join(contextRoot, 'commits.md'), 'utf-8');
+      await prependCommit(contextRoot, 'main', '## [C002] new entry\n\n');
+      const content = readFileSync(join(contextRoot, 'branches', 'main', 'commits.md'), 'utf-8');
       expect(content.indexOf('[C002]')).toBeLessThan(content.indexOf('[C001]'));
     });
 
-    it('creates file if missing', async () => {
-      await prependCommit(contextRoot, '## [C001] first\n');
-      const content = readFileSync(join(contextRoot, 'commits.md'), 'utf-8');
+    it('creates branch dir if missing', async () => {
+      await prependCommit(contextRoot, 'new-branch', '## [C001] first\n');
+      const content = readFileSync(join(contextRoot, 'branches', 'new-branch', 'commits.md'), 'utf-8');
       expect(content).toContain('[C001]');
     });
   });
@@ -118,7 +126,7 @@ describe('context', () => {
 
   describe('readRecentCommits', () => {
     it('returns empty string when no commits', () => {
-      expect(readRecentCommits(contextRoot)).toBe('');
+      expect(readRecentCommits(contextRoot, 'main')).toBe('');
     });
 
     it('returns last N commits', () => {
@@ -140,11 +148,145 @@ describe('context', () => {
 ---
 
 `;
-      writeFileSync(join(contextRoot, 'commits.md'), commits);
-      const result = readRecentCommits(contextRoot, 2);
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'), commits);
+      const result = readRecentCommits(contextRoot, 'main', 2);
       expect(result).toContain('[C003]');
       expect(result).toContain('[C002]');
       expect(result).not.toContain('[C001]');
+    });
+  });
+
+  describe('registry operations', () => {
+    beforeEach(() => {
+      writeFileSync(join(contextRoot, 'branches', '_registry.md'),
+        '## Active Branch\nmain\n\n## Branch History\n| Branch | Status | Created |\n|--------|--------|---------|');
+    });
+
+    it('updates active branch', async () => {
+      await updateRegistryActiveBranch(contextRoot, 'explore-x');
+      const content = readFileSync(join(contextRoot, 'branches', '_registry.md'), 'utf-8');
+      expect(content).toContain('## Active Branch\nexplore-x');
+    });
+
+    it('adds branch to registry history', async () => {
+      await addBranchToRegistry(contextRoot, 'explore-x', '2026-02-26');
+      const content = readFileSync(join(contextRoot, 'branches', '_registry.md'), 'utf-8');
+      expect(content).toContain('| explore-x | active | 2026-02-26 |');
+    });
+
+    it('updates branch status in registry', async () => {
+      await addBranchToRegistry(contextRoot, 'explore-x', '2026-02-26');
+      await updateRegistryBranchStatus(contextRoot, 'explore-x', 'merged');
+      const content = readFileSync(join(contextRoot, 'branches', '_registry.md'), 'utf-8');
+      expect(content).toContain('| explore-x | merged |');
+    });
+  });
+
+  describe('main.md branch list', () => {
+    beforeEach(() => {
+      writeFileSync(join(contextRoot, 'main.md'),
+        '# Project\n\n## Recent Milestones\n- (none yet)\n\n## Open Branches\n- (none)\n');
+    });
+
+    it('adds branch to Open Branches', async () => {
+      await addBranchToMainMd(contextRoot, 'explore-x');
+      const content = readFileSync(join(contextRoot, 'main.md'), 'utf-8');
+      expect(content).toContain('- explore-x');
+      expect(content).not.toContain('- (none)');
+    });
+
+    it('removes branch from Open Branches', async () => {
+      await addBranchToMainMd(contextRoot, 'explore-x');
+      await removeBranchFromMainMd(contextRoot, 'explore-x');
+      const content = readFileSync(join(contextRoot, 'main.md'), 'utf-8');
+      expect(content).not.toContain('- explore-x');
+      expect(content).toContain('- (none)');
+    });
+  });
+
+  describe('branch header operations', () => {
+    it('reads branch header', () => {
+      mkdirSync(join(contextRoot, 'branches', 'explore-x'), { recursive: true });
+      writeFileSync(join(contextRoot, 'branches', 'explore-x', 'commits.md'),
+        '# Branch: explore-x\n\n## Purpose\nTest purpose\n\n## Hypothesis\nTest hypo\n\n## Conclusion\n(Fill in at merge time — success/failure/partial)\n\n---\n\n# Milestone Journal\n\n## [C001] test');
+      const header = getBranchHeader(contextRoot, 'explore-x');
+      expect(header).toContain('Test purpose');
+      expect(header).toContain('Test hypo');
+      expect(header).not.toContain('[C001]');
+    });
+
+    it('updates branch conclusion', async () => {
+      mkdirSync(join(contextRoot, 'branches', 'explore-x'), { recursive: true });
+      writeFileSync(join(contextRoot, 'branches', 'explore-x', 'commits.md'),
+        '# Branch: explore-x\n\n## Conclusion\n(Fill in at merge time — success/failure/partial)\n\n---\n');
+      await updateBranchConclusion(contextRoot, 'explore-x', 'success', 'It worked great');
+      const content = readFileSync(join(contextRoot, 'branches', 'explore-x', 'commits.md'), 'utf-8');
+      expect(content).toContain('**Outcome**: success');
+      expect(content).toContain('It worked great');
+    });
+  });
+
+  describe('prependCommit — branch header handling', () => {
+    it('inserts after Milestone Journal anchor in branch files', async () => {
+      // Simulate a branch file created by ensureBranchDir
+      const branchDir = join(contextRoot, 'branches', 'explore-x');
+      mkdirSync(branchDir, { recursive: true });
+      const branchCommits = `# Branch: explore-x
+
+## Purpose
+Test caching strategy
+
+## Hypothesis
+Redis will be faster
+
+## Conclusion
+(Fill in at merge time — success/failure/partial)
+
+---
+
+# Milestone Journal
+
+`;
+      writeFileSync(join(branchDir, 'commits.md'), branchCommits);
+
+      await prependCommit(contextRoot, 'explore-x', '## [C001] 2026-02-26 | branch:explore-x | First commit\n**What**: Did something\n\n---\n\n');
+
+      const content = readFileSync(join(branchDir, 'commits.md'), 'utf-8');
+      // Commit must land AFTER "# Milestone Journal", not between title and Purpose
+      const journalIdx = content.indexOf('# Milestone Journal');
+      const commitIdx = content.indexOf('[C001]');
+      const purposeIdx = content.indexOf('## Purpose');
+      expect(commitIdx).toBeGreaterThan(journalIdx);
+      expect(purposeIdx).toBeLessThan(journalIdx);
+      // Verify header is intact
+      expect(content).toContain('## Purpose\nTest caching strategy');
+      expect(content).toContain('## Hypothesis\nRedis will be faster');
+    });
+  });
+
+  describe('removeBranchFromMainMd — prefix matching', () => {
+    it('does not remove prefix-similar branch names', async () => {
+      writeFileSync(join(contextRoot, 'main.md'),
+        '# Project\n\n## Recent Milestones\n- (none yet)\n\n## Open Branches\n- explore\n- explore-extended\n');
+
+      await removeBranchFromMainMd(contextRoot, 'explore');
+      const content = readFileSync(join(contextRoot, 'main.md'), 'utf-8');
+      expect(content).not.toContain('- explore\n');
+      expect(content).toContain('- explore-extended');
+    });
+  });
+
+  describe('appendLog', () => {
+    it('appends to per-branch log', async () => {
+      writeFileSync(join(contextRoot, 'branches', 'main', 'log.md'), '');
+      await appendLog(contextRoot, 'main', '| 2026-01-01 | test | file.ts | OK |');
+      const content = readFileSync(join(contextRoot, 'branches', 'main', 'log.md'), 'utf-8');
+      expect(content).toContain('test');
+    });
+
+    it('creates branch dir if needed', async () => {
+      await appendLog(contextRoot, 'new-branch', 'test log line');
+      expect(existsSync(join(contextRoot, 'branches', 'new-branch', 'log.md'))).toBe(true);
     });
   });
 });

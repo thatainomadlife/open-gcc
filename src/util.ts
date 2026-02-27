@@ -24,6 +24,8 @@ export interface HookInput {
   last_assistant_message?: string;
   // PreCompact
   trigger?: string;
+  // UserPromptSubmit
+  user_prompt?: string;
 }
 
 /**
@@ -85,25 +87,6 @@ function addToGitignore(cwd: string): void {
     appendFileSync(gitignorePath, `${prefix}.gcc/\n`, 'utf-8');
   } catch {
     // Non-critical — don't block on gitignore failure
-  }
-}
-
-/**
- * Check cooldown: returns true if last commit was less than `seconds` ago.
- */
-export function isOnCooldown(contextRoot: string, seconds: number = 120): boolean {
-  try {
-    const commitsPath = join(contextRoot, 'commits.md');
-    if (!existsSync(commitsPath)) return false;
-
-    const commits = readFileSync(commitsPath, 'utf-8');
-    const match = commits.match(/## \[C\d+\] (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
-    if (!match) return false;
-
-    const lastTime = new Date(match[1].replace(' ', 'T') + ':00');
-    return (Date.now() - lastTime.getTime()) / 1000 < seconds;
-  } catch {
-    return false;
   }
 }
 

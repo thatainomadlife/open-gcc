@@ -1,7 +1,7 @@
 {
   "name": "claude-gcc",
-  "version": "0.2.0",
-  "description": "Git-style Context Controller for Claude Code — automatic milestone tracking with commit/branch/merge workflow",
+  "version": "2.0.0",
+  "description": "Git-style Context Controller for Claude Code — agent-driven milestone tracking with commit/branch/merge workflow",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -19,21 +19,26 @@
     "developer-tools",
     "ai-coding",
     "claude",
-    "plugin"
+    "plugin",
+    "mcp"
   ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "tsc -p tsconfig.hooks.json && node scripts/bundle-mcp.mjs",
+    "build:hooks": "tsc -p tsconfig.hooks.json",
+    "build:mcp": "node scripts/bundle-mcp.mjs",
+    "dev": "tsc -p tsconfig.hooks.json --watch",
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {},
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@types/node": "^22.0.0",
-    "vitest": "^3.0.0"
+    "esbuild": "^0.27.3",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "zod": "^4.3.6"
   }
 }

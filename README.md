@@ -13,7 +13,7 @@ GCC solves this with a git-inspired workflow:
 - **Commits** record what was done, why, and what's next
 - **Branches** track exploration of uncertain approaches
 - **Merges** consolidate findings back to main context
-- **Auto-extraction** uses an LLM to summarize your work after every edit
+- **MCP tools** let Claude manage context autonomously — no LLM extraction needed
 
 All state lives in `.gcc/context/` as plain markdown — readable by humans, trackable by git, zero runtime dependencies.
 
@@ -29,7 +29,7 @@ There are other tools in this space. Let's be honest about them.
 | **Install** | `git clone && ./install.sh` | OAuth signup + cloud sync | Background HTTP server on port 37777 | Download .dmg, macOS only |
 | **Works offline** | Yes. Always. | No (cloud sync required) | Yes (local DB) | Yes (local app) |
 | **Git metaphor** | Commit/branch/merge | No | No | Git-aware but no workflow |
-| **Context approach** | Intentional commits + auto-extraction | Automatic recording | Automatic compression + vector retrieval | Session monitoring |
+| **Context approach** | MCP tools + hook nudges | Automatic recording | Automatic compression + vector retrieval | Session monitoring |
 | **You own your data** | It's markdown files in your repo | It's on their servers | It's in a SQLite database | It reads from Claude's directories |
 | **Platform** | Anywhere Node 18 runs | Anywhere (cloud) | Anywhere (server) | macOS only |
 
@@ -52,44 +52,43 @@ cd claude-gcc
 ./install.sh
 ```
 
-That's it. GCC activates automatically in every project on your next Claude Code session.
-
-### LLM Provider Setup (for auto-extraction)
-
-Set one of these environment variables for automatic milestone extraction:
-
-```bash
-# Option 1: OpenAI (default — gpt-4.1-nano)
-export OPENAI_API_KEY=sk-...
-
-# Option 2: Anthropic (claude-haiku-4-5)
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Option 3: Ollama (local, free, private)
-export GCC_OLLAMA_URL=http://localhost:11434
-```
-
-No API key? No problem. GCC still works — auto-extraction is disabled but manual `/gcc-commit` works fine. No errors, no nags, no degraded experience.
+That's it. The installer builds, wires hooks, symlinks skills, and registers the MCP server. GCC activates automatically in every project on your next Claude Code session.
 
 ## How It Works
+
+GCC v2 is **agent-driven**: Claude calls MCP tools directly to manage context. Hooks inject context at session start and nudge Claude to commit — but never make LLM calls themselves.
 
 ```
 Session Start
   │
   ├─ SessionStart Hook
-  │    └─ Injects project context (main.md + recent commits) into Claude's prompt
+  │    └─ Injects project context (main.md + recent commits) + MCP tool references
   │
   ├─ [You work, Claude edits files]
   │
   ├─ PostToolUse Hook (on Edit/Write/NotebookEdit)
   │    └─ Sets edit flag + logs operation
   │
+  ├─ UserPromptSubmit Hook
+  │    └─ Nudges Claude to commit if edits accumulated
+  │
   ├─ Stop Hook (turn ends)
-  │    └─ If edits happened → LLM extracts milestone → writes to commits.md
+  │    └─ Nudges Claude to commit if edits happened
   │
   └─ PreCompact Hook (before context compaction)
-       └─ Safety net — always extracts before context is lost
+       └─ Safety net — reminds Claude to commit before context is lost
 ```
+
+### MCP Tools
+
+Claude calls these autonomously via the `gcc-mcp` MCP server:
+
+| Tool | Description |
+|---|---|
+| `gcc_commit` | Record a milestone after completing subtasks, fixing bugs, or reaching checkpoints. Use proactively. |
+| `gcc_branch` | Create an exploration branch before uncertain/speculative work. Must be on main. |
+| `gcc_merge` | Consolidate branch findings when exploration is complete. Must be on the branch. |
+| `gcc_context` | Recall project state at session start, after compaction, or when context is unclear. Levels 1-5. |
 
 ### What gets created
 
@@ -98,11 +97,14 @@ your-project/
 └── .gcc/
     ├── context/
     │   ├── main.md              # Project focus, milestones, open branches
-    │   ├── commits.md           # Milestone journal (newest first)
     │   ├── branches/
-    │   │   ├── _registry.md     # Active branch tracker
-    │   │   └── {branch}.md      # Individual explorations
-    │   └── log.md               # Operation tracking
+    │   │   ├── _registry.md     # Active branch tracker + history
+    │   │   ├── main/
+    │   │   │   ├── commits.md   # Milestone journal (newest first)
+    │   │   │   └── log.md       # Operation log
+    │   │   └── {branch}/
+    │   │       ├── commits.md   # Branch header + milestones
+    │   │       └── log.md       # Branch operation log
     ├── config.json              # Optional configuration
     └── error.log                # Error log (auto-rotated)
 ```
@@ -124,35 +126,23 @@ Create `.gcc/config.json` in any project (optional — sensible defaults work ou
 
 ```json
 {
-  "provider": "openai",
-  "model": "gpt-4.1-nano",
-  "cooldownSeconds": 120,
-  "maxMessages": 30,
-  "maxMessageLength": 1000,
   "recentCommitCount": 3,
   "milestonesKept": 5,
-  "autoExtract": true
+  "logMaxLines": 500
 }
 ```
 
-### Environment Variable Overrides
-
-| Variable | Description |
-|---|---|
-| `GCC_PROVIDER` | Force provider: `openai`, `anthropic`, `ollama` |
-| `GCC_MODEL` | Override model for any provider |
-| `GCC_COOLDOWN` | Extraction cooldown in seconds |
-| `GCC_AUTO_EXTRACT` | `true`/`false` — enable/disable auto-extraction |
-| `GCC_OLLAMA_URL` | Ollama server URL |
-| `GCC_OLLAMA_MODEL` | Ollama model name (default: `llama3.2`) |
-
-Environment variables override `config.json`, which overrides defaults.
+| Key | Default | Description |
+|---|---|---|
+| `recentCommitCount` | 3 | Number of recent commits injected at session start |
+| `milestonesKept` | 5 | Max milestones shown in main.md Recent Milestones section |
+| `logMaxLines` | 500 | Auto-rotate log after this many lines |
 
 ## Uninstall
 
 ```bash
 cd claude-gcc
-./uninstall.sh          # Remove hooks and skills
+./uninstall.sh          # Remove hooks, skills, and MCP server
 ./uninstall.sh --purge  # Also remove all .gcc/ directories
 ```
 
@@ -163,7 +153,7 @@ git clone https://github.com/thatainomadlife/open-gcc.git
 cd claude-gcc
 npm install
 npm run build    # Compile TypeScript
-npm test         # Run tests (58 tests, <1s)
+npm test         # Run tests (~83 tests, <1s)
 npm run dev      # Watch mode
 ```
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# claude-gcc installer
-# Clones (if needed), builds, wires hooks into Claude Code, symlinks skills.
+# claude-gcc v2 installer
+# Builds, wires hooks into Claude Code, symlinks skills.
+# v2: No LLM provider needed — agent uses MCP tools directly.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
 SETTINGS="${CLAUDE_DIR}/settings.json"
 SKILLS_DIR="${CLAUDE_DIR}/skills"
 
-echo "=== claude-gcc installer ==="
+echo "=== claude-gcc v2 installer ==="
 
 # --- Prerequisites ---
 echo "Checking prerequisites..."
@@ -36,37 +37,11 @@ echo "      All prerequisites found."
 echo "[1/3] Building..."
 cd "$SCRIPT_DIR"
 npm install --silent || { echo "ERROR: npm install failed"; exit 1; }
-npm run build 2>&1 || { echo "ERROR: TypeScript build failed"; exit 1; }
+npm run build 2>&1 || { echo "ERROR: Build failed"; exit 1; }
 echo "      Built successfully."
 
-# --- 2. Check LLM provider ---
-echo "[2/3] Checking LLM provider..."
-PROVIDER_FOUND=""
-if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-  PROVIDER_FOUND="openai"
-  echo "      Found OPENAI_API_KEY -> OpenAI (gpt-4.1-nano)"
-elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  PROVIDER_FOUND="anthropic"
-  echo "      Found ANTHROPIC_API_KEY -> Anthropic (claude-haiku-4-5)"
-elif [[ -n "${GCC_OLLAMA_URL:-}" ]]; then
-  PROVIDER_FOUND="ollama"
-  echo "      Found GCC_OLLAMA_URL -> Ollama (llama3.2)"
-fi
-
-if [[ -z "$PROVIDER_FOUND" ]]; then
-  echo ""
-  echo "      WARNING: No LLM provider detected."
-  echo "      Auto-extraction will be disabled. Manual /gcc-commit still works."
-  echo ""
-  echo "      To enable auto-extraction, set one of:"
-  echo "        export OPENAI_API_KEY=sk-..."
-  echo "        export ANTHROPIC_API_KEY=sk-ant-..."
-  echo "        export GCC_OLLAMA_URL=http://localhost:11434"
-  echo ""
-fi
-
-# --- 3. Wire hooks and skills ---
-echo "[3/3] Installing hooks and skills..."
+# --- 2. Wire hooks and skills ---
+echo "[2/3] Installing hooks and skills..."
 
 if [[ ! -f "$SETTINGS" ]]; then
   echo "      Creating ${SETTINGS}..."
@@ -91,25 +66,25 @@ HOOKS_JSON=$(cat <<ENDJSON
       ]
     }
   ],
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/user-prompt-submit.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
   "PostToolUse": [
     {
-      "matcher": "Edit|Write|NotebookEdit",
+      "matcher": "Edit|Write|NotebookEdit|Bash",
       "hooks": [
         {
           "type": "command",
           "command": "node ${DIST_DIR}/hooks/post-tool-use.js",
           "timeout": 5
-        }
-      ]
-    }
-  ],
-  "Stop": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node ${DIST_DIR}/hooks/stop.js",
-          "timeout": 30
         }
       ]
     }
@@ -120,7 +95,18 @@ HOOKS_JSON=$(cat <<ENDJSON
         {
           "type": "command",
           "command": "node ${DIST_DIR}/hooks/pre-compact.js",
-          "timeout": 30
+          "timeout": 10
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/stop.js",
+          "timeout": 10
         }
       ]
     }
@@ -137,12 +123,14 @@ jq --argjson gcc_hooks "$HOOKS_JSON" '
 
   # Remove existing GCC hooks (identified by "gcc" in the command path)
   .hooks.SessionStart = [(.hooks.SessionStart // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.UserPromptSubmit = [(.hooks.UserPromptSubmit // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.PostToolUse = [(.hooks.PostToolUse // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.Stop = [(.hooks.Stop // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
 
   # Append GCC hooks
   .hooks.SessionStart = (.hooks.SessionStart + $gcc_hooks.SessionStart | unique_by(.matcher // "")) |
+  .hooks.UserPromptSubmit = (.hooks.UserPromptSubmit + $gcc_hooks.UserPromptSubmit | unique_by(.hooks[0].command)) |
   .hooks.PostToolUse = (.hooks.PostToolUse + $gcc_hooks.PostToolUse | unique_by(.matcher // "")) |
   .hooks.Stop = (.hooks.Stop + $gcc_hooks.Stop | unique_by(.hooks[0].command)) |
   .hooks.PreCompact = (.hooks.PreCompact + $gcc_hooks.PreCompact | unique_by(.hooks[0].command))
@@ -163,14 +151,51 @@ for skill in commit branch merge context; do
   echo "      /gcc-${skill} -> ${source}"
 done
 
+# --- 3. Register MCP server + permissions ---
+echo "[3/3] Registering MCP server..."
+
+MCP_SERVER_PATH="${DIST_DIR}/mcp/server.js"
+GCC_TOOLS='["mcp__gcc-mcp__gcc_commit","mcp__gcc-mcp__gcc_branch","mcp__gcc-mcp__gcc_merge","mcp__gcc-mcp__gcc_context"]'
+
+if command -v claude &>/dev/null; then
+  # Use claude CLI to register MCP server
+  claude mcp add --scope user gcc-mcp -- node "$MCP_SERVER_PATH" 2>/dev/null || true
+  echo "      MCP server registered via claude CLI."
+else
+  # Fall back to jq-based registration in ~/.claude.json
+  CLAUDE_JSON="${HOME}/.claude.json"
+  if [[ ! -f "$CLAUDE_JSON" ]]; then
+    echo '{}' > "$CLAUDE_JSON"
+  fi
+  tmp=$(mktemp)
+  jq --arg path "$MCP_SERVER_PATH" '
+    .mcpServers["gcc-mcp"] = {"command":"node","args":[$path]}
+  ' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
+  echo "      MCP server registered via jq (claude CLI not found)."
+fi
+
+# Add tool permissions to settings
+tmp=$(mktemp)
+jq --argjson tools "$GCC_TOOLS" '
+  .permissions = (.permissions // {}) |
+  .permissions.allow = ((.permissions.allow // []) + $tools | unique)
+' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+echo "      Tool permissions added."
+
 echo ""
-echo "=== claude-gcc installed ==="
+echo "=== claude-gcc v2 installed ==="
 echo ""
 echo "GCC will auto-activate in every project on next Claude Code session."
 echo "Context is stored in .gcc/context/ (auto-created, auto-gitignored)."
 echo ""
-echo "Skills available:"
-echo "  /gcc-commit <title>  — Record a named milestone"
-echo "  /gcc-branch <name>   — Start an exploration branch"
-echo "  /gcc-merge           — Merge branch back to main"
-echo "  /gcc-context         — Recall project state"
+echo "MCP Tools (agent uses autonomously):"
+echo "  gcc_commit   — Record a milestone"
+echo "  gcc_branch   — Create exploration branch"
+echo "  gcc_merge    — Merge branch back to main"
+echo "  gcc_context  — Recall project state"
+echo ""
+echo "Skills (user convenience):"
+echo "  /gcc-commit <title>  — Trigger manual commit"
+echo "  /gcc-branch <name>   — Create branch"
+echo "  /gcc-merge           — Merge branch"
+echo "  /gcc-context         — Recall state"

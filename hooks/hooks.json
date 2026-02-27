@@ -12,25 +12,25 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/user-prompt-submit.js",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|NotebookEdit",
+        "matcher": "Edit|Write|NotebookEdit|Bash",
         "hooks": [
           {
             "type": "command",
             "command": "node dist/hooks/post-tool-use.js",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node dist/hooks/stop.js",
-            "timeout": 30
           }
         ]
       }
@@ -41,7 +41,18 @@
           {
             "type": "command",
             "command": "node dist/hooks/pre-compact.js",
-            "timeout": 30
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/stop.js",
+            "timeout": 10
           }
         ]
       }

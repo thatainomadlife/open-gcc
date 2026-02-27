@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gcc-mcp": {
+      "command": "node",
+      "args": ["dist/mcp/server.js"]
+    }
+  }
+}

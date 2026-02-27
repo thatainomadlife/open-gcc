@@ -1,10 +1,11 @@
 {
   "name": "claude-gcc",
-  "version": "0.2.0",
-  "description": "Git-style Context Controller — automatic milestone tracking with commit/branch/merge workflow",
+  "version": "2.0.0",
+  "description": "Git-style Context Controller — agent-driven milestone tracking with commit/branch/merge workflow",
   "author": {
     "name": "SilentSignal"
   },
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json"
+  "hooks": "./hooks/hooks.json",
+  "mcp": "./.mcp.json"
 }

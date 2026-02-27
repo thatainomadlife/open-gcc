@@ -1,32 +1,21 @@
 ---
 name: commit
-description: Record a GCC milestone manually. Use when you want to name a specific checkpoint.
+description: Record a GCC milestone. Use when completing work, fixing bugs, reaching checkpoints, or before ending a session.
 argument-hint: <title>
-allowed-tools: Read, Edit, Bash(date *)
+allowed-tools: mcp__gcc-mcp__gcc_commit
 ---
 
 Record a GCC commit with title: $ARGUMENTS
 
 ## Instructions
 
-1. Read `.gcc/context/commits.md` to find the latest commit ID (first `## [C###]` line)
-2. Increment the ID (e.g. C001 -> C002, C042 -> C043)
-3. Get current timestamp: `date '+%Y-%m-%d %H:%M'`
-4. Read `.gcc/context/branches/_registry.md` for the active branch name
-5. Prepend a new entry to `commits.md` (after the `# Milestone Journal` header):
+Call the `gcc_commit` MCP tool with:
+- **title**: $ARGUMENTS (derive from recent work if not provided)
+- **what**: Derive from recent work context — be specific about the change
+- **why**: Why it matters for the project
+- **files_changed**: Key files from recent edits (at least one required)
+- **next_step**: Immediate next step
 
-```
-## [C###] YYYY-MM-DD HH:MM | branch:{active} | {title}
-**What**: {describe what was accomplished based on recent context}
-**Why**: {why it matters for the project}
-**Files**: {key files from recent edits, comma-separated}
-**Next**: {immediate next step}
+All fields are required. Derive each field from recent work context.
 
----
-
-```
-
-6. Update the `## Recent Milestones` section in `.gcc/context/main.md`:
-   - Add new entry at top: `- YYYY-MM-DD: {title} ({branch})`
-   - Keep only the last 5 entries
-   - Remove `- (none yet)` if present
+The tool handles commit ID generation, timestamp, branch detection, and updating main.md milestones automatically.
