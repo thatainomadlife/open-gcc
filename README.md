@@ -66,17 +66,17 @@ Session Start
   │
   ├─ [You work, Claude edits files]
   │
-  ├─ PostToolUse Hook (on Edit/Write/NotebookEdit)
-  │    └─ Sets edit flag + logs operation
+  ├─ PostToolUse Hook (on Edit/Write/NotebookEdit/Bash)
+  │    └─ Logs tool operation to active branch's log.md
   │
   ├─ UserPromptSubmit Hook
-  │    └─ Nudges Claude to commit if edits accumulated
+  │    └─ Injects lightweight tool reminder (keeps MCP tool names in context)
   │
   ├─ Stop Hook (turn ends)
-  │    └─ Nudges Claude to commit if edits happened
+  │    └─ Logs session end to active branch's log.md (audit trail)
   │
   └─ PreCompact Hook (before context compaction)
-       └─ Safety net — reminds Claude to commit before context is lost
+       └─ Reminds Claude to commit before context is lost
 ```
 
 ### MCP Tools

@@ -12,8 +12,8 @@ npm run build
 ## Building
 
 ```bash
-npm run build      # Compile TypeScript to dist/
-npm run dev        # Watch mode for development
+npm run build      # Compile hooks + bundle MCP server
+npm run dev        # Watch mode (hooks only — re-run `npm run build` for MCP changes)
 ```
 
 ## Testing
@@ -27,31 +27,47 @@ npm run test:watch # Watch mode
 
 ```
 src/
-├── provider.ts         # LLM provider abstraction (OpenAI/Anthropic/Ollama)
-├── config.ts           # Configuration loading (.gcc/config.json + env vars)
-├── extractor.ts        # Milestone extraction from transcripts
+├── config.ts           # Configuration loading (.gcc/config.json)
 ├── context.ts          # Context file read/write operations
 ├── bootstrap.ts        # Context directory initialization
+├── migrate.ts          # v1 → v2 migration
 ├── util.ts             # Shared utilities
-└── hooks/
-    ├── session-start.ts  # Inject context at session start
-    ├── post-tool-use.ts  # Track edits (Edit/Write/NotebookEdit)
-    ├── stop.ts           # Auto-extract on turn completion
-    └── pre-compact.ts    # Safety net before context compaction
+├── hooks/
+│   ├── session-start.ts    # Inject context + MCP tool references
+│   ├── post-tool-use.ts    # Log tool operations to branch log
+│   ├── user-prompt-submit.ts  # Lightweight MCP tool reminder
+│   ├── stop.ts             # Session-end logging (audit trail)
+│   └── pre-compact.ts      # Nudge to commit before compaction
+└── mcp/
+    ├── server.ts           # MCP server entry point (4 tools)
+    ├── handlers.ts         # Tool dispatch router
+    └── operations/
+        ├── shared.ts       # Shared MCP utilities
+        ├── commit.ts       # gcc_commit handler
+        ├── branch.ts       # gcc_branch handler
+        ├── merge.ts        # gcc_merge handler
+        └── context.ts      # gcc_context handler
 
 tests/
-├── provider.test.ts    # Provider resolution + API call mocking
-├── config.test.ts      # Config loading, defaults, env overrides
+├── config.test.ts      # Config loading and defaults
 ├── context.test.ts     # Commit IDs, prepend, milestones, branch registry
 ├── bootstrap.test.ts   # Init, partial init recovery
-├── util.test.ts        # Cooldown, error logging, path resolution
-└── extractor.test.ts   # End-to-end extraction with mocked LLM
+├── util.test.ts        # Error logging, path resolution, stdin parsing
+├── migrate.test.ts     # v1 → v2 migration
+└── mcp/
+    ├── commit.test.ts  # gcc_commit handler
+    ├── branch.test.ts  # gcc_branch handler
+    ├── merge.test.ts   # gcc_merge handler
+    └── context.test.ts # gcc_context handler
 
 skills/                 # Claude Code skill definitions
 ├── commit/SKILL.md
 ├── branch/SKILL.md
 ├── merge/SKILL.md
 └── context/SKILL.md
+
+scripts/
+└── bundle-mcp.mjs     # esbuild bundler for MCP server
 ```
 
 ## Pull Request Guidelines
@@ -63,7 +79,7 @@ skills/                 # Claude Code skill definitions
 
 ## Design Principles
 
-- **Zero runtime dependencies** — only dev dependencies (TypeScript, vitest)
+- **Zero runtime dependencies** — devDependencies (TypeScript, vitest, esbuild, MCP SDK, zod) are bundled at build time
 - **Silent failures** — hooks never block Claude Code
 - **Human-readable state** — all context is plain markdown
 - **Minimal abstractions** — functions over classes, direct over clever
