@@ -2,7 +2,8 @@
  * MCP tool dispatch — routes tool calls to operation handlers.
  */
 
-import { getContextRoot } from '../util.js';
+import { existsSync } from 'node:fs';
+import { getContextRoot, getGCCRoot, ensureGCCRoot } from '../util.js';
 import { ensureContextStructure } from '../bootstrap.js';
 import { needsMigration, migrateV1ToV2 } from '../migrate.js';
 import { handleCommit, type CommitArgs } from './operations/commit.js';
@@ -21,6 +22,12 @@ export async function dispatch(
   try {
     // Resolve context root from environment
     const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    const gccRoot = getGCCRoot(cwd);
+    const isFirstInit = !existsSync(gccRoot);
+
+    // Ensure .gcc/ exists with .gitignore entry (idempotent)
+    ensureGCCRoot(cwd);
+
     const contextRoot = getContextRoot(cwd);
 
     // Run migration if needed
@@ -48,6 +55,10 @@ export async function dispatch(
         break;
       default:
         result = `Unknown tool: ${toolName}`;
+    }
+
+    if (isFirstInit) {
+      result = `✦ GCC initialized for this project (.gcc/ created, .gitignore updated).\n\n${result}`;
     }
 
     return {
