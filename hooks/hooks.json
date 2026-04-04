@@ -46,6 +46,18 @@
         ]
       }
     ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/post-compact.js",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -53,6 +65,17 @@
             "type": "command",
             "command": "node dist/hooks/stop.js",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/stop-failure.js",
+            "timeout": 5
           }
         ]
       }

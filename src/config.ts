@@ -12,12 +12,14 @@ export interface GCCConfig {
   recentCommitCount: number;
   milestonesKept: number;
   logMaxLines: number;
+  nudgeAfterToolUses: number;
 }
 
 const DEFAULTS: GCCConfig = {
   recentCommitCount: 3,
   milestonesKept: 5,
   logMaxLines: 500,
+  nudgeAfterToolUses: 30,
 };
 
 /**
@@ -33,6 +35,7 @@ export function loadConfig(gccRoot: string): GCCConfig {
       if (typeof fileConfig.recentCommitCount === 'number') config.recentCommitCount = fileConfig.recentCommitCount;
       if (typeof fileConfig.milestonesKept === 'number') config.milestonesKept = fileConfig.milestonesKept;
       if (typeof fileConfig.logMaxLines === 'number') config.logMaxLines = fileConfig.logMaxLines;
+      if (typeof fileConfig.nudgeAfterToolUses === 'number') config.nudgeAfterToolUses = fileConfig.nudgeAfterToolUses;
     } catch {
       // Malformed config — use defaults
     }

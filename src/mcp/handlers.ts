@@ -10,6 +10,7 @@ import { handleCommit, type CommitArgs } from './operations/commit.js';
 import { handleBranch, type BranchArgs } from './operations/branch.js';
 import { handleMerge, type MergeArgs } from './operations/merge.js';
 import { handleContext, type ContextArgs } from './operations/context.js';
+import { handleStatus, type StatusArgs } from './operations/status.js';
 
 /**
  * Dispatch a tool call to the appropriate handler.
@@ -52,6 +53,9 @@ export async function dispatch(
         break;
       case 'gcc_context':
         result = await handleContext(contextRoot, args as unknown as ContextArgs);
+        break;
+      case 'gcc_status':
+        result = await handleStatus(contextRoot, args as unknown as StatusArgs);
         break;
       default:
         result = `Unknown tool: ${toolName}`;

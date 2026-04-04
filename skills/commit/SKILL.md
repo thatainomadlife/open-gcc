@@ -2,6 +2,7 @@
 name: commit
 description: Record a GCC milestone. Use when completing work, fixing bugs, reaching checkpoints, or before ending a session.
 argument-hint: <title>
+effort: high
 allowed-tools: mcp__gcc-mcp__gcc_commit
 ---
 

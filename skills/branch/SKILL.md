@@ -2,6 +2,7 @@
 name: branch
 description: Create a GCC exploration branch. Use before exploring uncertain approaches, investigating bugs, or comparing alternatives.
 argument-hint: <name>
+effort: low
 allowed-tools: mcp__gcc-mcp__gcc_branch
 ---
 

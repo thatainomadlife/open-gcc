@@ -43,7 +43,7 @@ export function getNextCommitId(contextRoot: string, branch: string): string {
     if (!match) return 'C001';
 
     const nextNum = parseInt(match[1], 10) + 1;
-    return `C${String(nextNum).padStart(3, '0')}`;
+    return `C${String(nextNum).padStart(Math.max(3, String(nextNum).length), '0')}`;
   } catch {
     return 'C001';
   }

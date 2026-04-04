@@ -100,6 +100,18 @@ HOOKS_JSON=$(cat <<ENDJSON
       ]
     }
   ],
+  "PostCompact": [
+    {
+      "matcher": "manual|auto",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/post-compact.js",
+          "timeout": 5
+        }
+      ]
+    }
+  ],
   "Stop": [
     {
       "hooks": [
@@ -107,6 +119,17 @@ HOOKS_JSON=$(cat <<ENDJSON
           "type": "command",
           "command": "node ${DIST_DIR}/hooks/stop.js",
           "timeout": 10
+        }
+      ]
+    }
+  ],
+  "StopFailure": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/stop-failure.js",
+          "timeout": 5
         }
       ]
     }
@@ -127,13 +150,17 @@ jq --argjson gcc_hooks "$HOOKS_JSON" '
   .hooks.PostToolUse = [(.hooks.PostToolUse // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.Stop = [(.hooks.Stop // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.PostCompact = [(.hooks.PostCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.StopFailure = [(.hooks.StopFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
 
   # Append GCC hooks
   .hooks.SessionStart = (.hooks.SessionStart + $gcc_hooks.SessionStart | unique_by(.matcher // "")) |
   .hooks.UserPromptSubmit = (.hooks.UserPromptSubmit + $gcc_hooks.UserPromptSubmit | unique_by(.hooks[0].command)) |
   .hooks.PostToolUse = (.hooks.PostToolUse + $gcc_hooks.PostToolUse | unique_by(.matcher // "")) |
   .hooks.Stop = (.hooks.Stop + $gcc_hooks.Stop | unique_by(.hooks[0].command)) |
-  .hooks.PreCompact = (.hooks.PreCompact + $gcc_hooks.PreCompact | unique_by(.hooks[0].command))
+  .hooks.PreCompact = (.hooks.PreCompact + $gcc_hooks.PreCompact | unique_by(.hooks[0].command)) |
+  .hooks.PostCompact = (.hooks.PostCompact + $gcc_hooks.PostCompact | unique_by(.matcher // "")) |
+  .hooks.StopFailure = (.hooks.StopFailure + $gcc_hooks.StopFailure | unique_by(.hooks[0].command))
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 echo "      Hooks installed."
 
@@ -141,7 +168,7 @@ echo "      Hooks installed."
 echo "      Installing skills..."
 mkdir -p "$SKILLS_DIR"
 
-for skill in commit branch merge context; do
+for skill in commit branch merge context status; do
   target="${SKILLS_DIR}/gcc-${skill}"
   source="${SCRIPT_DIR}/skills/${skill}"
   if [[ -L "$target" || -d "$target" ]]; then
@@ -155,7 +182,7 @@ done
 echo "[3/3] Registering MCP server..."
 
 MCP_SERVER_PATH="${DIST_DIR}/mcp/server.js"
-GCC_TOOLS='["mcp__gcc-mcp__gcc_commit","mcp__gcc-mcp__gcc_branch","mcp__gcc-mcp__gcc_merge","mcp__gcc-mcp__gcc_context"]'
+GCC_TOOLS='["mcp__gcc-mcp__gcc_commit","mcp__gcc-mcp__gcc_branch","mcp__gcc-mcp__gcc_merge","mcp__gcc-mcp__gcc_context","mcp__gcc-mcp__gcc_status"]'
 
 if command -v claude &>/dev/null; then
   # Use claude CLI to register MCP server

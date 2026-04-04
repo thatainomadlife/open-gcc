@@ -52,6 +52,18 @@ describe('context', () => {
         '# Milestone Journal\n\n## [C099] 2026-01-01 12:00 | branch:main | Test\n');
       expect(getNextCommitId(contextRoot, 'main')).toBe('C100');
     });
+
+    it('handles overflow past C999 with dynamic padding', () => {
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'),
+        '# Milestone Journal\n\n## [C999] 2026-01-01 12:00 | branch:main | Test\n');
+      expect(getNextCommitId(contextRoot, 'main')).toBe('C1000');
+    });
+
+    it('handles 4-digit IDs correctly', () => {
+      writeFileSync(join(contextRoot, 'branches', 'main', 'commits.md'),
+        '# Milestone Journal\n\n## [C1234] 2026-01-01 12:00 | branch:main | Test\n');
+      expect(getNextCommitId(contextRoot, 'main')).toBe('C1235');
+    });
   });
 
   describe('getActiveBranch', () => {

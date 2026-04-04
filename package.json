@@ -1,6 +1,6 @@
 {
   "name": "claude-gcc",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Git-style Context Controller for Claude Code — agent-driven milestone tracking with commit/branch/merge workflow",
   "type": "module",
   "license": "MIT",

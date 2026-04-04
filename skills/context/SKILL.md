@@ -1,6 +1,7 @@
 ---
 name: context
 description: Recall GCC project state. Use PROACTIVELY at session start, after compaction, or when recalling prior work.
+effort: low
 allowed-tools: mcp__gcc-mcp__gcc_context
 ---
 

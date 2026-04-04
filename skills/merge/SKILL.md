@@ -1,6 +1,7 @@
 ---
 name: merge
 description: Merge current GCC exploration branch. Use when exploration is complete and findings should be consolidated.
+effort: medium
 allowed-tools: mcp__gcc-mcp__gcc_merge
 ---
 

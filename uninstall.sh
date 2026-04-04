@@ -29,7 +29,9 @@ if command -v jq &>/dev/null && [[ -f "$SETTINGS" ]]; then
     .hooks.UserPromptSubmit = [(.hooks.UserPromptSubmit // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
     .hooks.PostToolUse = [(.hooks.PostToolUse // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
     .hooks.Stop = [(.hooks.Stop // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
-    .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))]
+    .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+    .hooks.PostCompact = [(.hooks.PostCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+    .hooks.StopFailure = [(.hooks.StopFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))]
   ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
   echo "      Hooks removed."
 else
@@ -38,7 +40,7 @@ fi
 
 # --- Remove skills ---
 echo "[2/3] Removing skill symlinks..."
-for skill in commit branch merge context; do
+for skill in commit branch merge context status; do
   target="${SKILLS_DIR}/gcc-${skill}"
   if [[ -L "$target" ]]; then
     rm "$target"

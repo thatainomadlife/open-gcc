@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     output({
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
-        additionalContext: `[GCC active: branch=${branch}. Tools: gcc_commit, gcc_branch, gcc_merge, gcc_context]`,
+        additionalContext: `[GCC active: branch=${branch}. Tools: gcc_commit, gcc_branch, gcc_merge, gcc_context, gcc_status]`,
       },
     });
   } catch {

@@ -1,33 +1,23 @@
 /**
- * SessionStart hook — inject GCC context and MCP tool references.
+ * PostCompact hook — re-inject GCC context after context compaction.
  *
- * v2: No LLM calls. Runs migration if needed.
- * Returns context as additionalContext pointing Claude at MCP tools.
+ * After compaction, the context injected by SessionStart is lost.
+ * This hook re-injects the project state so the agent doesn't lose orientation.
+ * Lighter than SessionStart — no migration check, no structure creation.
  */
 
-import { readStdin, getContextRoot, ensureGCCRoot, getGCCRoot, output, logError } from '../util.js';
-import { ensureContextStructure } from '../bootstrap.js';
+import { readStdin, getContextRoot, isGCCEnabled, getGCCRoot, output, logError } from '../util.js';
 import { loadConfig } from '../config.js';
 import { readMainContext, readRecentCommits, getActiveBranch } from '../context.js';
-import { needsMigration, migrateV1ToV2 } from '../migrate.js';
 
 async function main(): Promise<void> {
   try {
     const input = await readStdin();
     const cwd = input.cwd;
 
-    // Auto-create .gcc/ in every project, add to .gitignore
-    ensureGCCRoot(cwd);
+    if (!isGCCEnabled(cwd)) process.exit(0);
 
     const contextRoot = getContextRoot(cwd);
-
-    // Run v1→v2 migration if needed
-    if (needsMigration(contextRoot)) {
-      migrateV1ToV2(contextRoot);
-    }
-
-    ensureContextStructure(contextRoot);
-
     const mainContext = readMainContext(contextRoot);
     if (!mainContext) process.exit(0);
 
@@ -52,7 +42,7 @@ async function main(): Promise<void> {
 
     output({
       hookSpecificOutput: {
-        hookEventName: 'SessionStart',
+        hookEventName: 'PostCompact',
         additionalContext: contextText,
       },
     });

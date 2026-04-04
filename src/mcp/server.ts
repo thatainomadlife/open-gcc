@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { dispatch } from './handlers.js';
 
 const server = new McpServer(
-  { name: 'gcc-mcp', version: '2.0.0' },
+  { name: 'gcc-mcp', version: '2.1.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -67,6 +67,14 @@ server.tool(
     metadata_segment: z.string().optional().describe('Search term to find in commits (level 5 only)'),
   },
   async (args) => dispatch('gcc_context', args)
+);
+
+// gcc_status
+server.tool(
+  'gcc_status',
+  'Quick status check — returns active branch, last commit, tool operations since last commit, time since last commit, and open branches. Zero-arg, instant orientation. Use when you need a fast "where am I?" without full context retrieval.',
+  {},
+  async (args) => dispatch('gcc_status', args)
 );
 
 async function main() {

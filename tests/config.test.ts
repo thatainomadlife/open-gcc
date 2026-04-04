@@ -58,4 +58,17 @@ describe('loadConfig', () => {
     const config = loadConfig(testDir);
     expect(config.logMaxLines).toBe(1000);
   });
+
+  it('returns default nudgeAfterToolUses of 30', () => {
+    const config = loadConfig(testDir);
+    expect(config.nudgeAfterToolUses).toBe(30);
+  });
+
+  it('respects nudgeAfterToolUses config', () => {
+    writeFileSync(join(testDir, 'config.json'), JSON.stringify({
+      nudgeAfterToolUses: 50,
+    }));
+    const config = loadConfig(testDir);
+    expect(config.nudgeAfterToolUses).toBe(50);
+  });
 });
