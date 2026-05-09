@@ -1,8 +1,8 @@
 # GCC — Git-style Context Controller for Claude Code
 
-Automatic session continuity through structured milestone tracking. No databases. No servers. No background processes. No cloud accounts. No subscriptions. Just markdown files that humans can read and git can track.
+Automatic session continuity through structured milestone tracking. SQLite under the hood, markdown views on top. No servers. No cloud accounts. No subscriptions. Files `cat` can read, `git` can track, and `grep` can search — with a real query engine when you want one.
 
-**Zero runtime dependencies.** Not "lightweight." Not "minimal." *Zero.*
+**Zero runtime dependencies.** v3 uses Node 22+'s built-in `node:sqlite`. No `better-sqlite3`, no native builds, no npm install footprint.
 
 ## Why GCC?
 
@@ -10,39 +10,14 @@ Claude Code sessions are ephemeral. Context compacts. Sessions end. When you com
 
 GCC solves this with a git-inspired workflow:
 
-- **Commits** record what was done, why, and what's next
-- **Branches** track exploration of uncertain approaches
-- **Merges** consolidate findings back to main context
-- **MCP tools** let Claude manage context autonomously — no LLM extraction needed
+- **Commits** record what was done, why, and what's next (with optional tags)
+- **Branches** track exploration of uncertain approaches (with optional work-mode templates)
+- **Merges** consolidate findings with confidence + evidence (audit-grade conclusions)
+- **Search** across everything via SQLite FTS5
+- **MCP tools** let Claude manage context autonomously
+- **CLI** (`gcc`) lets *you* inspect state without a Claude session
 
-All state lives in `.gcc/context/` as plain markdown — readable by humans, trackable by git, zero runtime dependencies.
-
-## The Competitive Landscape (Or: Why GCC Exists)
-
-There are other tools in this space. Let's be honest about them.
-
-| | GCC | OneContext | claude-mem | Context Manager |
-|---|---|---|---|---|
-| **Runtime deps** | **0** | Cloud backend | SQLite + ChromaDB | macOS app |
-| **Storage** | Markdown files | Their servers | Vector database | Reads your Claude data |
-| **Actually open source** | MIT. The whole thing. | "Open source" but needs their cloud service | AGPL + PolyForm Noncommercial (the RAG module restricts commercial use — read the fine print) | Closed source. $29. |
-| **Install** | `git clone && ./install.sh` | OAuth signup + cloud sync | Background HTTP server on port 37777 | Download .dmg, macOS only |
-| **Works offline** | Yes. Always. | No (cloud sync required) | Yes (local DB) | Yes (local app) |
-| **Git metaphor** | Commit/branch/merge | No | No | Git-aware but no workflow |
-| **Context approach** | MCP tools + hook nudges | Automatic recording | Automatic compression + vector retrieval | Session monitoring |
-| **You own your data** | It's markdown files in your repo | It's on their servers | It's in a SQLite database | It reads from Claude's directories |
-| **Platform** | Anywhere Node 18 runs | Anywhere (cloud) | Anywhere (server) | macOS only |
-
-### A note on "open source"
-
-We love open source. Real open source. MIT, Apache 2.0, BSD — licenses that actually let you do whatever you want.
-
-Some projects in this space call themselves "open source" while:
-- Requiring a cloud backend they control (your context, their servers)
-- Using AGPL with additional noncommercial restrictions on key components (open source until you try to use it commercially)
-- Publishing code you can read but can't meaningfully run without their infrastructure
-
-GCC is MIT licensed. All of it. No cloud. No phone-home. No "open core" where the good parts cost money. Your context data is markdown files sitting in your project directory. `cat` them. `grep` them. Commit them to git. Copy them to a USB drive. We don't care — they're yours.
+State lives in `.gcc/state.db` (SQLite — source of truth) and `.gcc/context/*.md` (derived views — still readable by humans, trackable by git).
 
 ## Quick Start
 
@@ -52,97 +27,191 @@ cd claude-gcc
 ./install.sh
 ```
 
-That's it. The installer builds, wires hooks, symlinks skills, and registers the MCP server. GCC activates automatically in every project on your next Claude Code session.
+The installer builds, wires all 28 documented Claude Code hook events, symlinks 6 skills, registers the MCP server, and puts `gcc` on your PATH. GCC activates automatically in every project on your next Claude Code session.
 
-## How It Works
+**Requirements:** Node ≥22 (for built-in `node:sqlite`), `npm`, `jq`.
 
-GCC v2 is **agent-driven**: Claude calls MCP tools directly to manage context. Hooks inject context at session start and nudge Claude to commit — but never make LLM calls themselves.
-
-```
-Session Start
-  │
-  ├─ SessionStart Hook
-  │    └─ Injects project context (main.md + recent commits) + MCP tool references
-  │
-  ├─ [You work, Claude edits files]
-  │
-  ├─ PostToolUse Hook (on Edit/Write/NotebookEdit/Bash)
-  │    └─ Logs tool operation to active branch's log.md
-  │
-  ├─ UserPromptSubmit Hook
-  │    └─ Injects lightweight tool reminder (keeps MCP tool names in context)
-  │
-  ├─ Stop Hook (turn ends)
-  │    └─ Logs session end to active branch's log.md (audit trail)
-  │
-  └─ PreCompact Hook (before context compaction)
-       └─ Reminds Claude to commit before context is lost
-```
-
-### MCP Tools
+## MCP Tools (Claude-facing)
 
 Claude calls these autonomously via the `gcc-mcp` MCP server:
 
-| Tool | Description |
+| Tool | What it does |
 |---|---|
-| `gcc_commit` | Record a milestone after completing subtasks, fixing bugs, or reaching checkpoints. Use proactively. |
-| `gcc_branch` | Create an exploration branch before uncertain/speculative work. Must be on main. |
-| `gcc_merge` | Consolidate branch findings when exploration is complete. Must be on the branch. |
-| `gcc_context` | Recall project state at session start, after compaction, or when context is unclear. Levels 1-5. |
+| `gcc_commit` | Record a milestone. Accepts `title`, `what`, `why`, `files_changed`, `next_step`, optional `tags`. |
+| `gcc_branch` | Create an exploration branch. Accepts `name`, `purpose`, `hypothesis`, optional `template` (`investigation`\|`feature`\|`incident`\|`refactor`). |
+| `gcc_merge` | Consolidate a branch to main. Accepts `branch_name`, `outcome`, `conclusion`, optional `confidence` + `evidence_files`. |
+| `gcc_context` | Recall project state at levels 1-5 (progressive detail). |
+| `gcc_status` | Quick "where am I?" — active branch, last commit, ops since commit, open branches, recent hook errors. |
+| `gcc_search` | Full-text search across all commits. SQLite FTS5 (`AND`/`OR`/`NOT`/`"phrase"`/`prefix*`). Optional tag/branch filters. |
 
-### What gets created
+## CLI (you-facing)
+
+```
+gcc status                         # Dashboard: branch, last commit, errors
+gcc log [-b branch] [-n 50]        # Recent hook event log
+gcc search <query> [-t tag] [-v]   # FTS5 search (supports AND/OR/NOT/quotes/prefix*)
+gcc commits [-b branch] [-n 20] [-v]
+gcc tags                           # Tag frequency table
+gcc branches [-a]                  # List branches (-a for merged/abandoned)
+gcc export [--since 7d] [--format markdown|json]   # Dump commits
+gcc help
+```
+
+Use `--gcc-root <path>` to point at a specific project, or rely on `CLAUDE_PROJECT_DIR` / cwd.
+
+### CLI examples
+
+```bash
+gcc status                                      # current project snapshot
+gcc search "honeypot AND mirai" -v              # FTS5 with verbose output
+gcc search redis -t infra                       # tag-filtered
+gcc export --since 30d --format json | jq .     # pipe to anything
+gcc log -n 200 -b feature-auth                  # branch audit trail
+```
+
+## Hook Lifecycle (28 events — full coverage)
+
+GCC listens on every Claude Code hook event and logs structurally to SQLite:
+
+```
+Session lifecycle:   SessionStart, SessionEnd
+Turn lifecycle:      UserPromptSubmit, UserPromptExpansion, Stop, StopFailure
+Tool activity:       PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch
+Subagents:           SubagentStart, SubagentStop, TeammateIdle
+Tasks:               TaskCreated, TaskCompleted
+Worktrees:           WorktreeCreate, WorktreeRemove
+Compaction:          PreCompact, PostCompact
+Instructions:        InstructionsLoaded
+Filesystem:          FileChanged, CwdChanged
+Configuration:       ConfigChange
+Permissions:         PermissionRequest, PermissionDenied
+MCP elicitation:     Elicitation, ElicitationResult
+Notifications:       Notification
+```
+
+All hooks are fire-and-forget (graceful on failure). `SessionStart` and `PostCompact` inject project context. `PostToolUse` nudges Claude to `gcc_commit` every N tool ops (configurable). `PreToolUse` captures tool intent BEFORE execution (distinct from `PostToolUse` outcome). `FileChanged` defaults to watching dependency manifests (`flake.nix`, `package.json`, `pyproject.toml`, etc.) — auto-tag commits on dep updates. OPSEC: `ElicitationResult` records only field-count, never user-supplied form values (which may carry credentials).
+
+## Storage
 
 ```
 your-project/
 └── .gcc/
-    ├── context/
-    │   ├── main.md              # Project focus, milestones, open branches
-    │   ├── branches/
-    │   │   ├── _registry.md     # Active branch tracker + history
-    │   │   ├── main/
-    │   │   │   ├── commits.md   # Milestone journal (newest first)
-    │   │   │   └── log.md       # Operation log
-    │   │   └── {branch}/
-    │   │       ├── commits.md   # Branch header + milestones
-    │   │       └── log.md       # Branch operation log
-    ├── config.json              # Optional configuration
-    └── error.log                # Error log (auto-rotated)
+    ├── state.db                # SQLite source of truth (WAL mode)
+    ├── context/                # Rendered markdown views (regenerated on every write)
+    │   ├── main.md             # Project focus, milestones, open branches
+    │   └── branches/
+    │       ├── _registry.md    # Active branch + history table
+    │       ├── main/{commits.md, log.md}
+    │       └── {branch}/{commits.md, log.md}
+    ├── context.v2-backup/      # Pre-migration snapshot (auto-created on v2→v3)
+    ├── config.json             # Optional overrides
+    └── error.log               # Auto-rotated (max 100 lines)
 ```
 
-All files are human-readable markdown. Read them. Edit them. They're yours.
+**The DB is authoritative. Markdown files are disposable views** — you can delete them and they'll regenerate on the next write. But most edits are safe: the renderer only overwrites on mutation, not on read.
 
-## Skills
+## Tags (v3)
 
-| Skill | Description |
-|---|---|
-| `/gcc-commit <title>` | Record a named milestone manually |
-| `/gcc-branch <name>` | Start an exploration branch |
-| `/gcc-merge` | Merge branch findings back to main |
-| `/gcc-context` | Recall project state |
+Optional freeform categorization on commits. Lowercased + deduped automatically.
+
+```
+gcc_commit({
+  ...
+  tags: ["malware", "honeypot", "infra"]
+})
+```
+
+Query them:
+```bash
+gcc tags                  # Frequency table
+gcc search fix -t malware # FTS + tag filter
+```
+
+## Branch Templates (v3)
+
+Scaffold the rendered branch header with work-mode-appropriate sections:
+
+| Template | Adds these sections | Use for |
+|---|---|---|
+| `investigation` | **Evidence Log** | Hypothesis-driven debugging, RCA |
+| `feature` | **Acceptance Criteria** | New functionality with concrete "done" |
+| `incident` | **Timeline**, **Impact** | Production issues |
+| `refactor` | **Scope**, **Risks** | Bounded code changes |
+
+## Structured Merge Conclusions (v3)
+
+Evidence-backed consolidation when findings will outlive the branch:
+
+```
+gcc_merge({
+  branch_name: "investigate-latency-spike",
+  outcome: "success",
+  conclusion: "Root cause: connection pool saturation during deploy.",
+  confidence: "high",
+  evidence_files: [
+    "bench/before.txt",
+    "bench/after.txt",
+    "grafana/latency-p99.png"
+  ]
+})
+```
+
+Rendered markdown shows confidence and a bulleted evidence list — audit-grade consolidation.
+
+## Full-Text Search (v3)
+
+SQLite FTS5 indexes every commit's `title`, `what`, `why`, and `next_step` with Porter stemming. Search syntax:
+
+```
+redis                    # stemmed (matches redis, redising)
+"log rotation"           # phrase
+mirai AND redtail        # boolean
+auth NOT oauth           # negation
+deploy*                  # prefix
+```
+
+Ranked by relevance. Optional tag and branch filters.
+
+## Observability
+
+- `gcc_status` and `gcc status` surface recent hook errors from `error.log` (`Hook errors (24h): N — last: TIMESTAMP`)
+- `GCC_DEBUG=1` env var makes every hook emit timestamped stderr lines with event/tool/duration
+- `error.log` auto-rotates at 100 lines
 
 ## Configuration
 
-Create `.gcc/config.json` in any project (optional — sensible defaults work out of the box):
+Create `.gcc/config.json` in any project (optional):
 
 ```json
 {
   "recentCommitCount": 3,
   "milestonesKept": 5,
-  "logMaxLines": 500
+  "logMaxLines": 500,
+  "nudgeAfterToolUses": 30
 }
 ```
 
 | Key | Default | Description |
 |---|---|---|
-| `recentCommitCount` | 3 | Number of recent commits injected at session start |
-| `milestonesKept` | 5 | Max milestones shown in main.md Recent Milestones section |
-| `logMaxLines` | 500 | Auto-rotate log after this many lines |
+| `recentCommitCount` | 3 | Recent commits injected at session start |
+| `milestonesKept` | 5 | Milestones shown in main.md |
+| `logMaxLines` | 500 | Soft cap on log retention |
+| `nudgeAfterToolUses` | 30 | Tool ops between commit nudges |
+
+Malformed config emits a stderr warning instead of silently falling back to defaults.
+
+## Migration
+
+- **v1 → v2**: Runs automatically when a v1 `.gcc/commits.md` at root is detected. Moves to `branches/main/`, backs up originals.
+- **v2 → v3**: Runs automatically when `.gcc/state.db` is missing. Reads existing markdown, populates SQLite, backs up markdown to `context.v2-backup/`. Preserves original commit timestamps and IDs where possible.
+
+Both migrations are idempotent and safe. Backups are never deleted automatically.
 
 ## Uninstall
 
 ```bash
 cd claude-gcc
-./uninstall.sh          # Remove hooks, skills, and MCP server
+./uninstall.sh          # Remove hooks, skills, MCP server, gcc CLI symlink
 ./uninstall.sh --purge  # Also remove all .gcc/ directories
 ```
 
@@ -152,10 +221,26 @@ cd claude-gcc
 git clone https://github.com/thatainomadlife/open-gcc.git
 cd claude-gcc
 npm install
-npm run build    # Compile TypeScript
-npm test         # Run tests (~83 tests, <1s)
+npm run build    # tsc + esbuild bundle MCP server
+npm test         # 110+ tests, <2s
 npm run dev      # Watch mode
 ```
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+## The Competitive Landscape
+
+| | GCC | OneContext | claude-mem | Context Manager |
+|---|---|---|---|---|
+| **Runtime deps** | **0** (uses built-in `node:sqlite`) | Cloud backend | SQLite + ChromaDB | macOS app |
+| **Storage** | SQLite + rendered markdown | Their servers | Vector DB | Reads Claude's data |
+| **Open source** | MIT — the whole thing | "Open source" but cloud-required | AGPL + noncommercial | Closed source ($29) |
+| **Install** | `git clone && ./install.sh` | OAuth + cloud sync | Background HTTP server | `.dmg`, macOS only |
+| **Works offline** | Yes, always | No | Yes (local DB) | Yes (local app) |
+| **Git metaphor** | Commit/branch/merge | No | No | No workflow |
+| **Full-text search** | Yes (FTS5) | Via their cloud | Vector similarity | No |
+| **CLI** | Yes (`gcc`) | Web UI | No | No |
+| **You own your data** | Files in your repo | Their servers | Their DB format | Their app's cache |
 
 ## Contributing
 

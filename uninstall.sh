@@ -31,7 +31,11 @@ if command -v jq &>/dev/null && [[ -f "$SETTINGS" ]]; then
     .hooks.Stop = [(.hooks.Stop // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
     .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
     .hooks.PostCompact = [(.hooks.PostCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
-    .hooks.StopFailure = [(.hooks.StopFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))]
+    .hooks.StopFailure = [(.hooks.StopFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+    .hooks.PostToolUseFailure = [(.hooks.PostToolUseFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+    .hooks.SubagentStart = [(.hooks.SubagentStart // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+    .hooks.SubagentStop = [(.hooks.SubagentStop // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+    .hooks.SessionEnd = [(.hooks.SessionEnd // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))]
   ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
   echo "      Hooks removed."
 else

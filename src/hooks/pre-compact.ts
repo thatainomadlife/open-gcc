@@ -1,26 +1,26 @@
 /**
- * PreCompact hook — nudge agent to commit before context compaction.
- *
- * v2: No LLM call. Just injects a reminder for the agent to use gcc_commit.
+ * PreCompact hook — nudge agent to commit before compaction.
  */
 
-import { readStdin, isGCCEnabled, output } from '../util.js';
+import { readStdin, isGCCEnabled, getGCCRoot, logError, output } from '../util.js';
+import { logHookEvent } from '../context.js';
 
 async function main(): Promise<void> {
   try {
     const input = await readStdin();
-    const cwd = input.cwd;
-
-    if (!isGCCEnabled(cwd)) process.exit(0);
-
+    if (!isGCCEnabled(input.cwd)) process.exit(0);
+    logHookEvent(getGCCRoot(input.cwd), {
+      event: 'compact-pre',
+      summary: input.trigger ?? 'unknown',
+    });
     output({
       hookSpecificOutput: {
         hookEventName: 'PreCompact',
         additionalContext: 'Context compaction imminent. Call gcc_commit now if you have unrecorded work.',
       },
     });
-  } catch {
-    process.exit(0);
+  } catch (e) {
+    try { logError(getGCCRoot(process.cwd()), e); } catch { /* */ }
   }
 }
 

@@ -1,31 +1,31 @@
 /**
- * UserPromptSubmit hook — lightweight MCP tool reminder.
- *
- * Injects a short line keeping tool names fresh in context,
- * especially useful after long sessions or compaction.
+ * UserPromptSubmit hook — tool reminder + log.
  */
 
-import { readStdin, getContextRoot, isGCCEnabled, output } from '../util.js';
-import { getActiveBranch } from '../context.js';
+import { readStdin, isGCCEnabled, getGCCRoot, output, logError } from '../util.js';
+import { logHookEvent, withDbRead } from '../context.js';
 
 async function main(): Promise<void> {
   try {
     const input = await readStdin();
-    const cwd = input.cwd;
+    if (!isGCCEnabled(input.cwd)) process.exit(0);
 
-    if (!isGCCEnabled(cwd)) process.exit(0);
+    const gccRoot = getGCCRoot(input.cwd);
+    const active = withDbRead(gccRoot, (db) => db.getActiveBranch().name);
 
-    const contextRoot = getContextRoot(cwd);
-    const branch = getActiveBranch(contextRoot);
+    logHookEvent(gccRoot, {
+      event: 'user-prompt-submit',
+      summary: (input.user_prompt ?? '').slice(0, 100),
+    });
 
     output({
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
-        additionalContext: `[GCC active: branch=${branch}. Tools: gcc_commit, gcc_branch, gcc_merge, gcc_context, gcc_status]`,
+        additionalContext: `[GCC active: branch=${active}. Tools: gcc_commit, gcc_branch, gcc_merge, gcc_context, gcc_status]`,
       },
     });
-  } catch {
-    process.exit(0);
+  } catch (e) {
+    try { logError(getGCCRoot(process.cwd()), e); } catch { /* */ }
   }
 }
 

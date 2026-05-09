@@ -4,43 +4,32 @@
 
 import { existsSync } from 'node:fs';
 import { getContextRoot, getGCCRoot, ensureGCCRoot } from '../util.js';
-import { ensureContextStructure } from '../bootstrap.js';
 import { needsMigration, migrateV1ToV2 } from '../migrate.js';
 import { handleCommit, type CommitArgs } from './operations/commit.js';
 import { handleBranch, type BranchArgs } from './operations/branch.js';
 import { handleMerge, type MergeArgs } from './operations/merge.js';
 import { handleContext, type ContextArgs } from './operations/context.js';
 import { handleStatus, type StatusArgs } from './operations/status.js';
+import { handleSearch, type SearchArgs } from './operations/search.js';
 
-/**
- * Dispatch a tool call to the appropriate handler.
- * All handlers are pure functions: contextRoot + args → result string.
- */
 export async function dispatch(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
-    // Resolve context root from environment
     const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
     const gccRoot = getGCCRoot(cwd);
     const isFirstInit = !existsSync(gccRoot);
 
-    // Ensure .gcc/ exists with .gitignore entry (idempotent)
     ensureGCCRoot(cwd);
 
     const contextRoot = getContextRoot(cwd);
 
-    // Run migration if needed
     if (needsMigration(contextRoot)) {
       migrateV1ToV2(contextRoot);
     }
 
-    // Ensure structure exists
-    ensureContextStructure(contextRoot);
-
     let result: string;
-
     switch (toolName) {
       case 'gcc_commit':
         result = await handleCommit(contextRoot, args as unknown as CommitArgs);
@@ -57,6 +46,9 @@ export async function dispatch(
       case 'gcc_status':
         result = await handleStatus(contextRoot, args as unknown as StatusArgs);
         break;
+      case 'gcc_search':
+        result = await handleSearch(contextRoot, args as unknown as SearchArgs);
+        break;
       default:
         result = `Unknown tool: ${toolName}`;
     }
@@ -65,13 +57,9 @@ export async function dispatch(
       result = `✦ GCC initialized for this project (.gcc/ created, .gitignore updated).\n\n${result}`;
     }
 
-    return {
-      content: [{ type: 'text' as const, text: result }],
-    };
+    return { content: [{ type: 'text' as const, text: result }] };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return {
-      content: [{ type: 'text' as const, text: `GCC Error: ${message}` }],
-    };
+    return { content: [{ type: 'text' as const, text: `GCC Error: ${message}` }] };
   }
 }

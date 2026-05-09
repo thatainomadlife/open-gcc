@@ -36,8 +36,9 @@ export function loadConfig(gccRoot: string): GCCConfig {
       if (typeof fileConfig.milestonesKept === 'number') config.milestonesKept = fileConfig.milestonesKept;
       if (typeof fileConfig.logMaxLines === 'number') config.logMaxLines = fileConfig.logMaxLines;
       if (typeof fileConfig.nudgeAfterToolUses === 'number') config.nudgeAfterToolUses = fileConfig.nudgeAfterToolUses;
-    } catch {
-      // Malformed config — use defaults
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      process.stderr.write(`[gcc] WARNING: could not parse ${configPath} — using defaults. (${msg})\n`);
     }
   }
 

@@ -1,9 +1,12 @@
 {
   "name": "claude-gcc",
-  "version": "2.1.0",
+  "version": "3.1.1",
   "description": "Git-style Context Controller for Claude Code — agent-driven milestone tracking with commit/branch/merge workflow",
   "type": "module",
   "license": "MIT",
+  "bin": {
+    "gcc": "./dist/cli/index.js"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/thatainomadlife/open-gcc"
@@ -23,7 +26,7 @@
     "mcp"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.hooks.json && node scripts/bundle-mcp.mjs",

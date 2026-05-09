@@ -26,6 +26,45 @@ export interface HookInput {
   trigger?: string;
   // UserPromptSubmit
   user_prompt?: string;
+  // SubagentStart / SubagentStop / TeammateIdle
+  agent_id?: string;
+  agent_type?: string;
+  agent_name?: string;
+  agent_description?: string;
+  idle_reason?: string;
+  // InstructionsLoaded
+  file_path?: string;
+  memory_type?: string;
+  load_reason?: string;
+  globs?: string[];
+  trigger_file_path?: string;
+  parent_file_path?: string;
+  // FileChanged
+  change_type?: string;
+  // ConfigChange
+  config_type?: string;
+  changed_fields?: string[];
+  // PermissionRequest / PermissionDenied
+  permission_suggestions?: unknown[];
+  auto_deny_reason?: string;
+  // UserPromptExpansion
+  expansion_type?: string;
+  command_name?: string;
+  command_args?: string;
+  prompt?: string;
+  // CwdChanged
+  old_cwd?: string;
+  // Elicitation / ElicitationResult
+  server_name?: string;
+  form_schema?: Record<string, unknown>;
+  user_response?: Record<string, unknown>;
+  // PostToolBatch
+  batch_id?: string;
+  tool_calls?: unknown[];
+  tool_responses?: unknown[];
+  // Notification
+  notification_type?: string;
+  message?: string;
 }
 
 /**
@@ -116,20 +155,30 @@ export function logError(gccRoot: string, error: unknown): void {
 
 /**
  * Read JSON from stdin (hooks receive input this way).
+ * Enforces a 4-second timeout so hooks never hang if stdin stalls.
  */
-export async function readStdin(): Promise<HookInput> {
+export async function readStdin(timeoutMs: number = 4000): Promise<HookInput> {
   return new Promise((resolve, reject) => {
     let data = '';
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(new Error(`stdin read timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const finish = (err: Error | null, result?: HookInput): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (err) reject(err); else resolve(result!);
+    };
     process.stdin.setEncoding('utf-8');
     process.stdin.on('data', (chunk) => { data += chunk; });
     process.stdin.on('end', () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch (e) {
-        reject(new Error(`Failed to parse stdin: ${e}`));
-      }
+      try { finish(null, JSON.parse(data) as HookInput); }
+      catch (e) { finish(new Error(`Failed to parse stdin: ${e}`)); }
     });
-    process.stdin.on('error', reject);
+    process.stdin.on('error', (e) => finish(e));
   });
 }
 
@@ -138,4 +187,16 @@ export async function readStdin(): Promise<HookInput> {
  */
 export function output(data: object): void {
   process.stdout.write(JSON.stringify(data));
+}
+
+/**
+ * Debug log to stderr — only emits when GCC_DEBUG=1 is set.
+ * Use for troubleshooting hook timing and payloads without polluting stdout.
+ */
+export function debugLog(label: string, payload?: Record<string, unknown>): void {
+  if (process.env.GCC_DEBUG !== '1') return;
+  const ts = new Date().toISOString().slice(11, 23);
+  const pid = process.pid;
+  const extra = payload ? ` ${JSON.stringify(payload)}` : '';
+  process.stderr.write(`[gcc-debug ${ts} pid=${pid}] ${label}${extra}\n`);
 }

@@ -16,9 +16,9 @@ echo "=== claude-gcc v2 installer ==="
 echo "Checking prerequisites..."
 missing=""
 if ! command -v node &>/dev/null; then
-  missing="${missing}  - node (>=18) — https://nodejs.org\n"
-elif [[ "$(node -e 'console.log(process.versions.node.split(".")[0])')" -lt 18 ]]; then
-  missing="${missing}  - node >=18 (found $(node -v)) — https://nodejs.org\n"
+  missing="${missing}  - node (>=22) — https://nodejs.org\n"
+elif [[ "$(node -e 'console.log(process.versions.node.split(".")[0])')" -lt 22 ]]; then
+  missing="${missing}  - node >=22 (found $(node -v)) — v3 uses built-in node:sqlite (Node 22+)\n"
 fi
 if ! command -v npm &>/dev/null; then
   missing="${missing}  - npm — https://nodejs.org\n"
@@ -56,7 +56,7 @@ HOOKS_JSON=$(cat <<ENDJSON
 {
   "SessionStart": [
     {
-      "matcher": "startup|resume|compact",
+      "matcher": "startup|resume|clear|compact",
       "hooks": [
         {
           "type": "command",
@@ -133,6 +133,240 @@ HOOKS_JSON=$(cat <<ENDJSON
         }
       ]
     }
+  ],
+  "PostToolUseFailure": [
+    {
+      "matcher": "Edit|Write|NotebookEdit|Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/post-tool-use-failure.js",
+          "timeout": 5
+        }
+      ]
+    }
+  ],
+  "SubagentStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/subagent-start.js",
+          "timeout": 5
+        }
+      ]
+    }
+  ],
+  "SubagentStop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/subagent-stop.js",
+          "timeout": 5
+        }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/session-end.js",
+          "timeout": 5
+        }
+      ]
+    }
+  ],
+  "TaskCreated": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/task-created.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "TaskCompleted": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/task-completed.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "WorktreeCreate": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/worktree-create.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "WorktreeRemove": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/worktree-remove.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "InstructionsLoaded": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/instructions-loaded.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "Edit|Write|NotebookEdit|Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/pre-tool-use.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "FileChanged": [
+    {
+      "matcher": "flake.nix|flake.lock|package.json|package-lock.json|pyproject.toml|Cargo.toml|go.mod|requirements.txt|.envrc|.env",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/file-changed.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "ConfigChange": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/config-change.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "PermissionRequest": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/permission-request.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "PermissionDenied": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/permission-denied.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "UserPromptExpansion": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/user-prompt-expansion.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "CwdChanged": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/cwd-changed.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "PostToolBatch": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/post-tool-batch.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "Elicitation": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/elicitation.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "ElicitationResult": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/elicitation-result.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "TeammateIdle": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/teammate-idle.js",
+          "timeout": 3
+        }
+      ]
+    }
+  ],
+  "Notification": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${DIST_DIR}/hooks/notification.js",
+          "timeout": 3
+        }
+      ]
+    }
   ]
 }
 ENDJSON
@@ -152,6 +386,27 @@ jq --argjson gcc_hooks "$HOOKS_JSON" '
   .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.PostCompact = [(.hooks.PostCompact // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
   .hooks.StopFailure = [(.hooks.StopFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.PostToolUseFailure = [(.hooks.PostToolUseFailure // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.SubagentStart = [(.hooks.SubagentStart // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.SubagentStop = [(.hooks.SubagentStop // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.SessionEnd = [(.hooks.SessionEnd // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.TaskCreated = [(.hooks.TaskCreated // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.TaskCompleted = [(.hooks.TaskCompleted // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.WorktreeCreate = [(.hooks.WorktreeCreate // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.WorktreeRemove = [(.hooks.WorktreeRemove // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.InstructionsLoaded = [(.hooks.InstructionsLoaded // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.PreToolUse = [(.hooks.PreToolUse // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.FileChanged = [(.hooks.FileChanged // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.ConfigChange = [(.hooks.ConfigChange // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.PermissionRequest = [(.hooks.PermissionRequest // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.PermissionDenied = [(.hooks.PermissionDenied // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.UserPromptExpansion = [(.hooks.UserPromptExpansion // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.CwdChanged = [(.hooks.CwdChanged // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.PostToolBatch = [(.hooks.PostToolBatch // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.Elicitation = [(.hooks.Elicitation // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.ElicitationResult = [(.hooks.ElicitationResult // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.TeammateIdle = [(.hooks.TeammateIdle // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
+  .hooks.Notification = [(.hooks.Notification // [])[] | select(.hooks | all(.command | test("gcc-|claude-gcc") | not))] |
 
   # Append GCC hooks
   .hooks.SessionStart = (.hooks.SessionStart + $gcc_hooks.SessionStart | unique_by(.matcher // "")) |
@@ -160,7 +415,28 @@ jq --argjson gcc_hooks "$HOOKS_JSON" '
   .hooks.Stop = (.hooks.Stop + $gcc_hooks.Stop | unique_by(.hooks[0].command)) |
   .hooks.PreCompact = (.hooks.PreCompact + $gcc_hooks.PreCompact | unique_by(.hooks[0].command)) |
   .hooks.PostCompact = (.hooks.PostCompact + $gcc_hooks.PostCompact | unique_by(.matcher // "")) |
-  .hooks.StopFailure = (.hooks.StopFailure + $gcc_hooks.StopFailure | unique_by(.hooks[0].command))
+  .hooks.StopFailure = (.hooks.StopFailure + $gcc_hooks.StopFailure | unique_by(.hooks[0].command)) |
+  .hooks.PostToolUseFailure = (.hooks.PostToolUseFailure + $gcc_hooks.PostToolUseFailure | unique_by(.matcher // "")) |
+  .hooks.SubagentStart = (.hooks.SubagentStart + $gcc_hooks.SubagentStart | unique_by(.hooks[0].command)) |
+  .hooks.SubagentStop = (.hooks.SubagentStop + $gcc_hooks.SubagentStop | unique_by(.hooks[0].command)) |
+  .hooks.SessionEnd = (.hooks.SessionEnd + $gcc_hooks.SessionEnd | unique_by(.hooks[0].command)) |
+  .hooks.TaskCreated = (.hooks.TaskCreated + $gcc_hooks.TaskCreated | unique_by(.hooks[0].command)) |
+  .hooks.TaskCompleted = (.hooks.TaskCompleted + $gcc_hooks.TaskCompleted | unique_by(.hooks[0].command)) |
+  .hooks.WorktreeCreate = (.hooks.WorktreeCreate + $gcc_hooks.WorktreeCreate | unique_by(.hooks[0].command)) |
+  .hooks.WorktreeRemove = (.hooks.WorktreeRemove + $gcc_hooks.WorktreeRemove | unique_by(.hooks[0].command)) |
+  .hooks.InstructionsLoaded = (.hooks.InstructionsLoaded + $gcc_hooks.InstructionsLoaded | unique_by(.hooks[0].command)) |
+  .hooks.PreToolUse = (.hooks.PreToolUse + $gcc_hooks.PreToolUse | unique_by(.matcher // "")) |
+  .hooks.FileChanged = (.hooks.FileChanged + $gcc_hooks.FileChanged | unique_by(.matcher // "")) |
+  .hooks.ConfigChange = (.hooks.ConfigChange + $gcc_hooks.ConfigChange | unique_by(.hooks[0].command)) |
+  .hooks.PermissionRequest = (.hooks.PermissionRequest + $gcc_hooks.PermissionRequest | unique_by(.hooks[0].command)) |
+  .hooks.PermissionDenied = (.hooks.PermissionDenied + $gcc_hooks.PermissionDenied | unique_by(.hooks[0].command)) |
+  .hooks.UserPromptExpansion = (.hooks.UserPromptExpansion + $gcc_hooks.UserPromptExpansion | unique_by(.hooks[0].command)) |
+  .hooks.CwdChanged = (.hooks.CwdChanged + $gcc_hooks.CwdChanged | unique_by(.hooks[0].command)) |
+  .hooks.PostToolBatch = (.hooks.PostToolBatch + $gcc_hooks.PostToolBatch | unique_by(.hooks[0].command)) |
+  .hooks.Elicitation = (.hooks.Elicitation + $gcc_hooks.Elicitation | unique_by(.hooks[0].command)) |
+  .hooks.ElicitationResult = (.hooks.ElicitationResult + $gcc_hooks.ElicitationResult | unique_by(.hooks[0].command)) |
+  .hooks.TeammateIdle = (.hooks.TeammateIdle + $gcc_hooks.TeammateIdle | unique_by(.hooks[0].command)) |
+  .hooks.Notification = (.hooks.Notification + $gcc_hooks.Notification | unique_by(.hooks[0].command))
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 echo "      Hooks installed."
 
@@ -168,7 +444,7 @@ echo "      Hooks installed."
 echo "      Installing skills..."
 mkdir -p "$SKILLS_DIR"
 
-for skill in commit branch merge context status; do
+for skill in commit branch merge context status search; do
   target="${SKILLS_DIR}/gcc-${skill}"
   source="${SCRIPT_DIR}/skills/${skill}"
   if [[ -L "$target" || -d "$target" ]]; then
@@ -182,7 +458,7 @@ done
 echo "[3/3] Registering MCP server..."
 
 MCP_SERVER_PATH="${DIST_DIR}/mcp/server.js"
-GCC_TOOLS='["mcp__gcc-mcp__gcc_commit","mcp__gcc-mcp__gcc_branch","mcp__gcc-mcp__gcc_merge","mcp__gcc-mcp__gcc_context","mcp__gcc-mcp__gcc_status"]'
+GCC_TOOLS='["mcp__gcc-mcp__gcc_commit","mcp__gcc-mcp__gcc_branch","mcp__gcc-mcp__gcc_merge","mcp__gcc-mcp__gcc_context","mcp__gcc-mcp__gcc_status","mcp__gcc-mcp__gcc_search"]'
 
 if command -v claude &>/dev/null; then
   # Use claude CLI to register MCP server
@@ -209,8 +485,24 @@ jq --argjson tools "$GCC_TOOLS" '
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 echo "      Tool permissions added."
 
+# --- Install gcc CLI binary ---
+CLI_SRC="${DIST_DIR}/cli/index.js"
+CLI_DEST="${HOME}/.local/bin/gcc"
+if [[ -f "$CLI_SRC" ]]; then
+  chmod +x "$CLI_SRC"
+  mkdir -p "${HOME}/.local/bin"
+  if [[ -L "$CLI_DEST" || -f "$CLI_DEST" ]]; then
+    rm -f "$CLI_DEST"
+  fi
+  ln -s "$CLI_SRC" "$CLI_DEST"
+  echo "      gcc CLI symlinked to ${CLI_DEST}"
+  if ! echo ":$PATH:" | grep -q ":${HOME}/.local/bin:"; then
+    echo "      NOTE: add ${HOME}/.local/bin to your PATH to use 'gcc' directly"
+  fi
+fi
+
 echo ""
-echo "=== claude-gcc v2 installed ==="
+echo "=== claude-gcc v3 installed ==="
 echo ""
 echo "GCC will auto-activate in every project on next Claude Code session."
 echo "Context is stored in .gcc/context/ (auto-created, auto-gitignored)."

@@ -1,18 +1,31 @@
 /**
- * Context file read/write helpers for GCC v2.
+ * GCC v3 context API — DB-backed, markdown-rendered.
  *
- * All commit/log operations are per-branch:
- *   .gcc/context/branches/{branch}/commits.md
- *   .gcc/context/branches/{branch}/log.md
+ * All operations go through SQLite (source of truth). Markdown views under
+ * .gcc/context/ are regenerated on every mutation by src/db/render.ts.
+ *
+ * Hooks and MCP handlers use `withDb(gccRoot, fn)` to open a short-lived
+ * DB connection and run work inside it. Rendering is automatic on write ops
+ * — call `renderAll(db, contextRoot)` after mutations if you bypass these
+ * helpers.
  */
 
-import { readFile, writeFile, appendFile } from 'node:fs/promises';
-import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { openDb, type GccDb, type Commit, type Branch } from './db/index.js';
+import { renderAll } from './db/render.js';
+import { migrateV2ToV3 } from './db/migrate-v3.js';
+import type { LogEvent } from './db/schema.js';
+
+export type { Commit, Branch } from './db/index.js';
 
 // ---------------------------------------------------------------------------
-// Path helpers
+// Paths
 // ---------------------------------------------------------------------------
+
+export function getContextDir(gccRoot: string): string {
+  return join(gccRoot, 'context');
+}
 
 export function getBranchDir(contextRoot: string, branch: string): string {
   return join(contextRoot, 'branches', branch);
@@ -27,356 +40,161 @@ export function getLogPath(contextRoot: string, branch: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Commit ID management
+// DB session wrapper
 // ---------------------------------------------------------------------------
 
 /**
- * Get the next commit ID by reading the latest from a branch's commits.md.
+ * Open a DB, run fn, render markdown, close.
+ * Migrates v2 markdown data on first open.
  */
-export function getNextCommitId(contextRoot: string, branch: string): string {
+export async function withDb<T>(gccRoot: string, fn: (db: GccDb) => Promise<T>): Promise<T> {
+  const db = openDb(gccRoot);
   try {
-    const commitsPath = getCommitsPath(contextRoot, branch);
-    if (!existsSync(commitsPath)) return 'C001';
-
-    const content = readFileSync(commitsPath, 'utf-8');
-    const match = content.match(/## \[C(\d+)\]/);
-    if (!match) return 'C001';
-
-    const nextNum = parseInt(match[1], 10) + 1;
-    return `C${String(nextNum).padStart(Math.max(3, String(nextNum).length), '0')}`;
-  } catch {
-    return 'C001';
+    migrateV2ToV3(db, gccRoot);
+    const result = await fn(db);
+    await renderAll(db, getContextDir(gccRoot));
+    return result;
+  } finally {
+    db.close();
   }
 }
 
-// ---------------------------------------------------------------------------
-// Branch management
-// ---------------------------------------------------------------------------
-
 /**
- * Get the active branch name from _registry.md.
+ * Read-only DB access — no render step.
  */
-export function getActiveBranch(contextRoot: string): string {
+export function withDbRead<T>(gccRoot: string, fn: (db: GccDb) => T): T {
+  const db = openDb(gccRoot);
   try {
-    const registryPath = join(contextRoot, 'branches', '_registry.md');
-    if (!existsSync(registryPath)) return 'main';
-
-    const content = readFileSync(registryPath, 'utf-8');
-    const match = content.match(/## Active Branch\n(\S+)/);
-    return match?.[1] || 'main';
-  } catch {
-    return 'main';
-  }
-}
-
-/**
- * Update the active branch in _registry.md.
- */
-export async function updateRegistryActiveBranch(
-  contextRoot: string,
-  newBranch: string
-): Promise<void> {
-  const registryPath = join(contextRoot, 'branches', '_registry.md');
-  if (!existsSync(registryPath)) return;
-
-  let content = await readFile(registryPath, 'utf-8');
-  content = content.replace(
-    /## Active Branch\n\S+/,
-    `## Active Branch\n${newBranch}`
-  );
-  await writeFile(registryPath, content, 'utf-8');
-}
-
-/**
- * Add a new branch entry to the registry history table.
- */
-export async function addBranchToRegistry(
-  contextRoot: string,
-  branchName: string,
-  date: string
-): Promise<void> {
-  const registryPath = join(contextRoot, 'branches', '_registry.md');
-  if (!existsSync(registryPath)) return;
-
-  let content = await readFile(registryPath, 'utf-8');
-  // Append row to the history table
-  content = content.trimEnd() + `\n| ${branchName} | active | ${date} |\n`;
-  await writeFile(registryPath, content, 'utf-8');
-}
-
-/**
- * Update a branch's status in the registry history table.
- */
-export async function updateRegistryBranchStatus(
-  contextRoot: string,
-  branchName: string,
-  status: string
-): Promise<void> {
-  const registryPath = join(contextRoot, 'branches', '_registry.md');
-  if (!existsSync(registryPath)) return;
-
-  let content = await readFile(registryPath, 'utf-8');
-  // Match the row for this branch and replace the status column
-  const escaped = branchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  content = content.replace(
-    new RegExp(`\\| ${escaped} \\| \\S+ \\|`),
-    `| ${branchName} | ${status} |`
-  );
-  await writeFile(registryPath, content, 'utf-8');
-}
-
-// ---------------------------------------------------------------------------
-// Commit writing
-// ---------------------------------------------------------------------------
-
-/**
- * Prepend a commit entry to a branch's commits.md (after the header).
- */
-export async function prependCommit(
-  contextRoot: string,
-  branch: string,
-  entry: string
-): Promise<void> {
-  const commitsPath = getCommitsPath(contextRoot, branch);
-
-  // Ensure branch directory exists
-  const branchDir = getBranchDir(contextRoot, branch);
-  if (!existsSync(branchDir)) {
-    mkdirSync(branchDir, { recursive: true });
-  }
-
-  const existing = existsSync(commitsPath)
-    ? await readFile(commitsPath, 'utf-8')
-    : '# Milestone Journal\n\n';
-
-  // Look for "# Milestone Journal" anchor first (handles branch files with
-  // Purpose/Hypothesis headers above), then fall back to first blank line.
-  const journalAnchor = '# Milestone Journal\n\n';
-  const journalIdx = existing.indexOf(journalAnchor);
-  if (journalIdx !== -1) {
-    const insertAt = journalIdx + journalAnchor.length;
-    await writeFile(commitsPath, existing.slice(0, insertAt) + entry + existing.slice(insertAt), 'utf-8');
-  } else {
-    const headerEnd = existing.indexOf('\n\n');
-    if (headerEnd !== -1) {
-      const header = existing.slice(0, headerEnd + 2);
-      const body = existing.slice(headerEnd + 2);
-      await writeFile(commitsPath, header + entry + body, 'utf-8');
-    } else {
-      await writeFile(commitsPath, existing + '\n' + entry, 'utf-8');
-    }
+    migrateV2ToV3(db, gccRoot);
+    return fn(db);
+  } finally {
+    db.close();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Milestones in main.md
+// High-level operations (used by MCP handlers)
+// ---------------------------------------------------------------------------
+
+export interface InsertCommitArgs {
+  title: string;
+  what: string;
+  why: string;
+  next_step: string;
+  files: string[];
+  tags?: string[];
+  branchName?: string;
+}
+
+export async function insertCommit(gccRoot: string, args: InsertCommitArgs): Promise<Commit> {
+  // db.insertCommit already writes an atomic 'commit' log entry.
+  return withDb(gccRoot, async (db) => db.insertCommit(args));
+}
+
+export async function createBranch(gccRoot: string, args: {
+  name: string;
+  purpose: string;
+  hypothesis: string;
+  template?: Branch['template'];
+}): Promise<Branch> {
+  return withDb(gccRoot, async (db) => {
+    const branch = db.createBranch(args);
+    db.setActiveBranch(branch.name);
+    db.appendLog({
+      branchName: branch.name,
+      event: 'branch-create',
+      summary: `Created branch ${branch.name}${args.template ? ` [${args.template}]` : ''}: ${args.purpose}`,
+    });
+    return branch;
+  });
+}
+
+export async function mergeBranch(gccRoot: string, args: {
+  branchName: string;
+  outcome: 'success' | 'failure' | 'partial';
+  conclusion: string;
+  confidence?: 'high' | 'medium' | 'low';
+  evidenceFiles?: string[];
+}): Promise<Commit> {
+  return withDb(gccRoot, async (db) => {
+    db.updateBranchConclusion(args.branchName, {
+      outcome: args.outcome,
+      conclusion: args.conclusion,
+      confidence: args.confidence,
+      evidenceFiles: args.evidenceFiles,
+    });
+
+    const commit = db.insertCommit({
+      branchName: 'main',
+      title: `Merge: ${args.branchName} (${args.outcome})`,
+      what: `Merged exploration branch '${args.branchName}'. ${args.conclusion}`,
+      why: 'Consolidate findings from exploration.',
+      files: [`.gcc/context/branches/${args.branchName}/`],
+      next_step: 'Continue on main with findings applied.',
+    });
+
+    db.setActiveBranch('main');
+    db.appendLog({
+      branchName: args.branchName,
+      event: 'branch-merge',
+      summary: `MERGE ${args.outcome}: ${args.conclusion}`,
+    });
+    db.appendLog({
+      branchName: 'main',
+      event: 'branch-merge',
+      summary: `Merged ${args.branchName} (${args.outcome}) as ${commit.commit_id}`,
+    });
+    return commit;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Hook-oriented logging — lightweight, fire-and-forget
 // ---------------------------------------------------------------------------
 
 /**
- * Update the Recent Milestones section in main.md. Keeps last `milestonesKept`.
+ * Append a log entry for hook events. Opens DB, logs, closes.
+ * Skips rendering (hooks are hot-path). Markdown catches up on next write op.
  */
-export async function updateMainMilestones(
-  contextRoot: string,
-  date: string,
-  branch: string,
-  title: string,
-  milestonesKept: number = 5
-): Promise<void> {
+export function logHookEvent(gccRoot: string, args: {
+  event: LogEvent | string;
+  toolName?: string;
+  summary?: string;
+  payload?: Record<string, unknown>;
+  branchName?: string;
+}): void {
+  const start = process.env.GCC_DEBUG === '1' ? Date.now() : 0;
+  const db = openDb(gccRoot);
   try {
-    const mainPath = join(contextRoot, 'main.md');
-    if (!existsSync(mainPath)) return;
-
-    let content = await readFile(mainPath, 'utf-8');
-    const newEntry = `- ${date}: ${title} (${branch})`;
-
-    const sectionStart = content.indexOf('## Recent Milestones');
-    if (sectionStart === -1) return;
-
-    const nextSection = content.indexOf('\n## ', sectionStart + 1);
-    const sectionEnd = nextSection !== -1 ? nextSection : content.length;
-
-    const section = content.slice(sectionStart, sectionEnd);
-    const lines = section.split('\n').filter(l => l.startsWith('- ') && !l.includes('(none yet)'));
-
-    const updated = [newEntry, ...lines].slice(0, milestonesKept);
-    const newSection = `## Recent Milestones\n${updated.join('\n')}\n`;
-    content = content.slice(0, sectionStart) + newSection + content.slice(sectionEnd);
-
-    await writeFile(mainPath, content, 'utf-8');
-  } catch {
-    // Silent failure
+    migrateV2ToV3(db, gccRoot);
+    db.appendLog(args);
+  } finally {
+    db.close();
+  }
+  if (start) {
+    const duration = Date.now() - start;
+    process.stderr.write(`[gcc-debug ${new Date().toISOString().slice(11, 23)} pid=${process.pid}] hook event=${args.event}${args.toolName ? ` tool=${args.toolName}` : ''} ${duration}ms\n`);
   }
 }
 
 // ---------------------------------------------------------------------------
-// main.md branch list management
+// Read helpers (preserved for MCP handlers + hooks)
 // ---------------------------------------------------------------------------
 
-/**
- * Add a branch name to the Open Branches section of main.md.
- */
-export async function addBranchToMainMd(contextRoot: string, branchName: string): Promise<void> {
-  try {
-    const mainPath = join(contextRoot, 'main.md');
-    if (!existsSync(mainPath)) return;
-
-    let content = await readFile(mainPath, 'utf-8');
-    const sectionStart = content.indexOf('## Open Branches');
-    if (sectionStart === -1) return;
-
-    // Remove "(none)" placeholder if present
-    content = content.replace(/- \(none\)\n?/, '');
-
-    const nextSection = content.indexOf('\n## ', sectionStart + 1);
-    const sectionEnd = nextSection !== -1 ? nextSection : content.length;
-
-    const before = content.slice(0, sectionEnd).trimEnd();
-    const after = content.slice(sectionEnd);
-
-    content = before + `\n- ${branchName}\n` + after;
-    await writeFile(mainPath, content, 'utf-8');
-  } catch {
-    // Silent failure
-  }
+export function getActiveBranchName(gccRoot: string): string {
+  return withDbRead(gccRoot, (db) => db.getActiveBranch().name);
 }
 
-/**
- * Remove a branch name from the Open Branches section of main.md.
- */
-export async function removeBranchFromMainMd(contextRoot: string, branchName: string): Promise<void> {
+export function readMainMarkdown(gccRoot: string): string | null {
   try {
-    const mainPath = join(contextRoot, 'main.md');
-    if (!existsSync(mainPath)) return;
-
-    let content = await readFile(mainPath, 'utf-8');
-    const escaped = branchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    content = content.replace(new RegExp(`^- ${escaped}$\\n?`, 'm'), '');
-
-    // If Open Branches section is now empty, add "(none)"
-    const sectionStart = content.indexOf('## Open Branches');
-    if (sectionStart !== -1) {
-      const nextSection = content.indexOf('\n## ', sectionStart + 1);
-      const sectionEnd = nextSection !== -1 ? nextSection : content.length;
-      const sectionContent = content.slice(sectionStart + '## Open Branches'.length, sectionEnd).trim();
-      if (!sectionContent || !sectionContent.includes('- ')) {
-        const newSection = '## Open Branches\n- (none)\n';
-        content = content.slice(0, sectionStart) + newSection + content.slice(sectionEnd);
-      }
-    }
-
-    await writeFile(mainPath, content, 'utf-8');
-  } catch {
-    // Silent failure
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Branch header (Purpose/Hypothesis/Conclusion) management
-// ---------------------------------------------------------------------------
-
-/**
- * Read the branch header block (everything before first ## [C###]) from a branch's commits.md.
- */
-export function getBranchHeader(contextRoot: string, branchName: string): string | null {
-  try {
-    const commitsPath = getCommitsPath(contextRoot, branchName);
-    if (!existsSync(commitsPath)) return null;
-
-    const content = readFileSync(commitsPath, 'utf-8');
-    const commitStart = content.indexOf('## [C');
-    if (commitStart === -1) return content.trim() || null;
-    return content.slice(0, commitStart).trim() || null;
+    const path = join(getContextDir(gccRoot), 'main.md');
+    if (!existsSync(path)) return null;
+    return readFileSync(path, 'utf-8');
   } catch {
     return null;
   }
 }
 
-/**
- * Update the Conclusion section in a branch's commits.md header.
- */
-export async function updateBranchConclusion(
-  contextRoot: string,
-  branchName: string,
-  outcome: string,
-  conclusion: string
-): Promise<void> {
-  const commitsPath = getCommitsPath(contextRoot, branchName);
-  if (!existsSync(commitsPath)) return;
-
-  let content = await readFile(commitsPath, 'utf-8');
-  content = content.replace(
-    /## Conclusion\n\(Fill in at merge time[^)]*\)/,
-    `## Conclusion\n**Outcome**: ${outcome}\n${conclusion}`
-  );
-  await writeFile(commitsPath, content, 'utf-8');
-}
-
-// ---------------------------------------------------------------------------
-// Reading
-// ---------------------------------------------------------------------------
-
-/**
- * Read the main context file for session injection.
- */
-export function readMainContext(contextRoot: string): string | null {
-  try {
-    const mainPath = join(contextRoot, 'main.md');
-    if (!existsSync(mainPath)) return null;
-    return readFileSync(mainPath, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read the last N commit entries from a branch's commits.md.
- */
-export function readRecentCommits(contextRoot: string, branch: string, count: number = 3): string {
-  try {
-    const commitsPath = getCommitsPath(contextRoot, branch);
-    if (!existsSync(commitsPath)) return '';
-
-    const content = readFileSync(commitsPath, 'utf-8');
-    const entries = content.split(/(?=## \[C\d+\])/).filter(e => e.startsWith('## [C'));
-    return entries.slice(0, count).join('\n');
-  } catch {
-    return '';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Logging
-// ---------------------------------------------------------------------------
-
-/**
- * Append a line to a branch's log.md. Auto-rotates at maxLines.
- */
-export async function appendLog(
-  contextRoot: string,
-  branch: string,
-  line: string,
-  maxLines: number = 500
-): Promise<void> {
-  try {
-    const logPath = getLogPath(contextRoot, branch);
-
-    // Ensure branch directory exists
-    const branchDir = getBranchDir(contextRoot, branch);
-    if (!existsSync(branchDir)) {
-      mkdirSync(branchDir, { recursive: true });
-    }
-
-    await appendFile(logPath, line + '\n', 'utf-8');
-
-    // Rotate if needed
-    if (existsSync(logPath)) {
-      const content = await readFile(logPath, 'utf-8');
-      const lines = content.split('\n');
-      if (lines.length > maxLines) {
-        await writeFile(logPath, lines.slice(-200).join('\n'), 'utf-8');
-      }
-    }
-  } catch {
-    // Fire-and-forget
-  }
+export function getRecentCommits(gccRoot: string, branch: string, count: number): Commit[] {
+  return withDbRead(gccRoot, (db) => db.listRecentCommits(branch, count));
 }
